@@ -21,9 +21,10 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: password.trim() });
     setBusy(false);
     if (error) {
-      setError(/invalid/i.test(error.message)
+      // Only map genuine credential failures; config problems (e.g. "Invalid API key") must stay visible.
+      setError(/invalid login credentials/i.test(error.message)
         ? 'Incorrect email or password. Use the email address you applied with and the password sent by the recruiter.'
-        : error.message);
+        : `Sign-in failed: ${error.message}`);
     }
   };
 
