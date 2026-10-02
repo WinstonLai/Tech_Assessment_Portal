@@ -1,0 +1,18 @@
+# --- CONFIDENTIAL: never commit assessment content (repo may be public for GitHub Pages) ---
+HPB_Interview_Materials/
+private/
+supabase/seed/*.sql
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# build / deps
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+supabase/.temp/
+supabase/.branches/

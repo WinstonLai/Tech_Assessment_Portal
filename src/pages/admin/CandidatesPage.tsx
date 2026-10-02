@@ -1,0 +1,355 @@
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { saveAs } from 'file-saver';
+import { errorMessage, supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/auth';
+import { formatDateTime, formatDuration, isExpired, toLocalInput } from '../../lib/format';
+import { sectionTotals } from '../../lib/marking';
+import { buildSummaryReport } from '../../lib/exportDocx';
+import type { Candidate, Mark, Question } from '../../lib/types';
+import { Alert, Button, Modal, Spinner, StatusBadge, inputClass } from '../../components/ui';
+import AdminHeader from './AdminHeader';
+
+const DEFAULT_ACCESS_DAYS = 3;
+const defaultExpiry = () => toLocalInput(new Date(Date.now() + DEFAULT_ACCESS_DAYS * 86400_000));
+const portalUrl = () => window.location.href.split('#')[0];
+
+interface Credentials { candidate: Candidate; password: string; isNew: boolean }
+
+async function invoke(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('admin-candidates', { body });
+  if (error) throw new Error(await errorMessage(error));
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export default function CandidatesPage() {
+  const { session } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [marks, setMarks] = useState<Mark[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [creds, setCreds] = useState<Credentials | null>(null);
+  const [editExpiry, setEditExpiry] = useState<Candidate | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Candidate | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const [c, m, q] = await Promise.all([
+      supabase.from('candidates').select('*').order('created_at', { ascending: false }),
+      supabase.from('marks').select('candidate_id,question_id,auto_score,final_score'),
+      supabase.from('questions').select('*').order('sort_order'),
+    ]);
+    const err = c.error ?? m.error ?? q.error;
+    if (err) setError(await errorMessage(err));
+    setCandidates((c.data ?? []) as Candidate[]);
+    setMarks((m.data ?? []) as Mark[]);
+    setQuestions((q.data ?? []) as Question[]);
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const marksByCandidate = useMemo(() => {
+    const map = new Map<string, Record<string, Mark>>();
+    for (const m of marks) {
+      const rec = map.get(m.candidate_id) ?? {};
+      rec[m.question_id] = m;
+      map.set(m.candidate_id, rec);
+    }
+    return map;
+  }, [marks]);
+
+  const scoreOf = (id: string) => {
+    const rec = marksByCandidate.get(id);
+    return rec ? sectionTotals(questions, rec).total : null;
+  };
+
+  const act = async (c: Candidate, fn: () => Promise<void>) => {
+    setBusyId(c.id);
+    setError(null);
+    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    setBusyId(null);
+  };
+
+  const resetPassword = (c: Candidate) => act(c, async () => {
+    const extend = isExpired(c.access_expires_at) ? new Date(Date.now() + DEFAULT_ACCESS_DAYS * 86400_000).toISOString() : undefined;
+    const data = await invoke({ action: 'reset_password', candidate_id: c.id, access_expires_at: extend });
+    setCreds({ candidate: data.candidate, password: data.password, isNew: false });
+    await load();
+  });
+
+  const toggleActive = (c: Candidate) => act(c, async () => {
+    const { error } = await supabase.from('candidates').update({ is_active: !c.is_active }).eq('id', c.id);
+    if (error) throw error;
+    await load();
+  });
+
+  const reopen = (c: Candidate) => act(c, async () => {
+    const { error } = await supabase.from('candidates').update({ status: 'in_progress', submitted_at: null }).eq('id', c.id);
+    if (error) throw error;
+    await load();
+  });
+
+  const exportSummary = async (kind: 'docx' | 'csv') => {
+    if (!candidates) return;
+    const rows = candidates.map((c) => ({ candidate: c, marks: marksByCandidate.get(c.id) ?? {} }));
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (kind === 'docx') {
+      saveAs(await buildSummaryReport(rows, questions, session?.user.email ?? 'admin'), `WellnessTrack_Candidate_Summary_${stamp}.docx`);
+      return;
+    }
+    const sections = [...new Set(questions.map((q) => q.section))];
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      ['name', 'email', 'status', 'active_time', 'active_seconds', 'started_at', 'submitted_at', ...sections.map((s) => `section_${s}`), 'total'].join(','),
+      ...rows.map(({ candidate: c, marks: m }) => {
+        const t = sectionTotals(questions, m);
+        return [c.full_name, c.email, c.status, formatDuration(c.active_seconds), c.active_seconds, c.started_at, c.submitted_at,
+          ...sections.map((s) => t.sections.get(s)?.score ?? 0), t.total].map(esc).join(',');
+      }),
+    ];
+    saveAs(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }), `WellnessTrack_Candidate_Summary_${stamp}.csv`);
+  };
+
+  const visible = (candidates ?? []).filter((c) =>
+    !filter || `${c.full_name ?? ''} ${c.email}`.toLowerCase().includes(filter.toLowerCase()));
+
+  return (
+    <div className="min-h-screen">
+      <AdminHeader />
+      <main className="mx-auto max-w-[1400px] space-y-5 px-4 py-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-bold">Candidates</h1>
+          <input className={`${inputClass} max-w-xs`} placeholder="Search name or email…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Search candidates" />
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => exportSummary('csv')} disabled={!candidates?.length}>⬇ Summary CSV</Button>
+            <Button variant="secondary" onClick={() => exportSummary('docx')} disabled={!candidates?.length}>⬇ Summary Word</Button>
+            <Button onClick={() => setShowAdd(true)}>+ Add candidate</Button>
+          </div>
+        </div>
+
+        {error && <Alert>{error}</Alert>}
+
+        {!candidates ? <Spinner /> : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full min-w-[1100px] text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Candidate</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Active time</th>
+                  <th className="px-4 py-3">Submitted</th>
+                  <th className="px-4 py-3">Access until</th>
+                  <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No candidates yet. Click “Add candidate” to issue access.</td></tr>
+                )}
+                {visible.map((c) => {
+                  const expired = isExpired(c.access_expires_at);
+                  const score = scoreOf(c.id);
+                  const busy = busyId === c.id;
+                  return (
+                    <tr key={c.id} className="border-t border-slate-100 align-top">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{c.full_name || '—'}</div>
+                        <div className="text-slate-500">{c.email}</div>
+                      </td>
+                      <td className="space-x-1 px-4 py-3">
+                        <StatusBadge status={c.status} />
+                        {!c.is_active && <StatusBadge status="inactive" />}
+                        {expired && c.status !== 'submitted' && <StatusBadge status="expired" />}
+                      </td>
+                      <td className="px-4 py-3 font-mono">{formatDuration(c.active_seconds)}</td>
+                      <td className="px-4 py-3">{formatDateTime(c.submitted_at)}</td>
+                      <td className={`px-4 py-3 ${expired ? 'text-rose-600' : ''}`}>
+                        <button className="underline decoration-dotted hover:text-indigo-700" onClick={() => setEditExpiry(c)}>
+                          {formatDateTime(c.access_expires_at)}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 font-semibold">{score == null ? <span className="font-normal text-slate-400">not marked</span> : `${score} / 100`}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Link to={`/admin/candidates/${c.id}`} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
+                            {c.status === 'submitted' ? 'Mark & export' : 'View'}
+                          </Link>
+                          <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => resetPassword(c)}>New password</Button>
+                          <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => toggleActive(c)}>
+                            {c.is_active ? 'Disable' : 'Enable'}
+                          </Button>
+                          {c.status === 'submitted' && (
+                            <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => reopen(c)}>Reopen</Button>
+                          )}
+                          <Button variant="ghost" className="!px-2.5 !py-1.5 !text-xs text-rose-700" disabled={busy} onClick={() => setConfirmDelete(c)}>Delete</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-xs text-slate-500">
+          “New password” issues a fresh password (the old one stops working) and re-enables access; if access had expired it is extended by {DEFAULT_ACCESS_DAYS} days.
+          “Disable” blocks access immediately, even for a candidate who is already signed in.
+        </p>
+      </main>
+
+      <AddCandidateModal
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        onCreated={async (cr) => { setShowAdd(false); setCreds(cr); await load(); }}
+      />
+      <CredentialsModal creds={creds} onClose={() => setCreds(null)} />
+      <ExpiryModal candidate={editExpiry} onClose={() => setEditExpiry(null)} onSaved={async () => { setEditExpiry(null); await load(); }} />
+      <Modal
+        open={!!confirmDelete}
+        title="Delete candidate?"
+        onClose={() => setConfirmDelete(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => {
+              const c = confirmDelete!;
+              setConfirmDelete(null);
+              void act(c, async () => { await invoke({ action: 'delete', candidate_id: c.id }); await load(); });
+            }}>Delete permanently</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          This permanently deletes <strong>{confirmDelete?.email}</strong>, their answers and marks. Export their report first if you need it.
+        </p>
+      </Modal>
+    </div>
+  );
+}
+
+function AddCandidateModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (c: Credentials) => void }) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [expiry, setExpiry] = useState(defaultExpiry);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) { setEmail(''); setName(''); setExpiry(defaultExpiry()); setError(null); }
+  }, [open]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await invoke({ action: 'create', email, full_name: name, access_expires_at: new Date(expiry).toISOString() });
+      onCreated({ candidate: data.candidate, password: data.password, isNew: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <Modal open={open} title="Add candidate" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium" htmlFor="c-email">Email</label>
+          <input id="c-email" type="email" required className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium" htmlFor="c-name">Full name</label>
+          <input id="c-name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium" htmlFor="c-exp">Access expires</label>
+          <input id="c-exp" type="datetime-local" required className={inputClass} value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+        </div>
+        {error && <Alert>{error}</Alert>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create & generate password'}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CredentialsModal({ creds, onClose }: { creds: Credentials | null; onClose: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  if (!creds) return null;
+  const { candidate: c, password } = creds;
+  const invitation = `Dear ${c.full_name || 'candidate'},
+
+Thank you for your interest in the HPB CDOO Data Engineering internship. Please complete the online technical assessment:
+
+Portal: ${portalUrl()}
+Email: ${c.email}
+Password: ${password}
+Access expires: ${formatDateTime(c.access_expires_at)}
+
+You can save and exit at any time and resume later; only your active time is recorded. Please submit before your access expires.
+
+Best regards`;
+
+  const copy = async (text: string, what: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(what);
+    window.setTimeout(() => setCopied(null), 1500);
+  };
+
+  return (
+    <Modal open title={creds.isNew ? 'Candidate created' : 'New password issued'} onClose={onClose} wide
+      footer={<Button onClick={onClose}>Done</Button>}>
+      <div className="space-y-4">
+        <Alert kind="warning">This password is shown only once. Copy it now — you can always issue a new one later.</Alert>
+        <div className="grid grid-cols-[110px_1fr_auto] items-center gap-2 text-sm">
+          <span className="text-slate-500">Email</span><span className="font-mono">{c.email}</span>
+          <Button variant="ghost" className="!py-1 !text-xs" onClick={() => copy(c.email, 'email')}>{copied === 'email' ? 'Copied' : 'Copy'}</Button>
+          <span className="text-slate-500">Password</span><span className="font-mono text-base font-semibold">{password}</span>
+          <Button variant="ghost" className="!py-1 !text-xs" onClick={() => copy(password, 'pw')}>{copied === 'pw' ? 'Copied' : 'Copy'}</Button>
+          <span className="text-slate-500">Expires</span><span>{formatDateTime(c.access_expires_at)}</span><span />
+        </div>
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-sm font-medium">Invitation email</span>
+            <Button variant="secondary" className="!py-1 !text-xs" onClick={() => copy(invitation, 'inv')}>{copied === 'inv' ? 'Copied ✓' : 'Copy invitation'}</Button>
+          </div>
+          <textarea readOnly className={`${inputClass} h-56 font-mono text-xs`} value={invitation} />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ExpiryModal({ candidate, onClose, onSaved }: { candidate: Candidate | null; onClose: () => void; onSaved: () => void }) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (candidate) { setValue(toLocalInput(candidate.access_expires_at)); setError(null); } }, [candidate]);
+  if (!candidate) return null;
+  const save = async () => {
+    const { error } = await supabase.from('candidates').update({ access_expires_at: new Date(value).toISOString() }).eq('id', candidate.id);
+    if (error) setError(await errorMessage(error));
+    else onSaved();
+  };
+  return (
+    <Modal open title={`Access expiry — ${candidate.email}`} onClose={onClose}
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save}>Save</Button></>}>
+      <label className="mb-1 block text-sm font-medium" htmlFor="exp">Access expires</label>
+      <input id="exp" type="datetime-local" className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} />
+      <div className="mt-2 flex gap-2">
+        {[1, 3, 7].map((d) => (
+          <Button key={d} variant="ghost" className="!py-1 !text-xs" onClick={() => setValue(toLocalInput(new Date(Date.now() + d * 86400_000)))}>
+            +{d} day{d > 1 ? 's' : ''} from now
+          </Button>
+        ))}
+      </div>
+      {error && <div className="mt-3"><Alert>{error}</Alert></div>}
+    </Modal>
+  );
+}

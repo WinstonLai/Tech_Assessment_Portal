@@ -1,0 +1,170 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Excalidraw,
+  CaptureUpdateAction,
+  convertToExcalidrawElements,
+  exportToBlob,
+  getSceneVersion,
+} from '@excalidraw/excalidraw';
+import type { ExcalidrawImperativeAPI, BinaryFiles } from '@excalidraw/excalidraw/types';
+import '@excalidraw/excalidraw/index.css';
+import type { DiagramScene } from '../lib/types';
+
+interface Props {
+  initialScene: DiagramScene | null;
+  onChange?: (scene: DiagramScene, png: string | null) => void;
+  readOnly?: boolean;
+  height?: number;
+}
+
+const SAVE_DEBOUNCE_MS = 1500;
+
+const TABLE_TEMPLATE = 'table_name\n────────────────\nPK  id\nFK  other_id\n    column_name';
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+export default function DiagramEditor({ initialScene, onChange, readOnly = false, height = 560 }: Props) {
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const lastVersion = useRef<number | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const emit = useCallback(async () => {
+    if (!api) return;
+    const elements = api.getSceneElements();
+    const files = api.getFiles();
+    const scene: DiagramScene = {
+      elements: elements as unknown as Record<string, unknown>[],
+      appState: { viewBackgroundColor: '#ffffff' },
+      files: files as unknown as Record<string, unknown>,
+    };
+    let png: string | null = null;
+    if (elements.length > 0) {
+      try {
+        const blob = await exportToBlob({
+          elements,
+          files,
+          appState: { exportBackground: true, viewBackgroundColor: '#ffffff' },
+          mimeType: 'image/png',
+          exportPadding: 24,
+          maxWidthOrHeight: 1800,
+        });
+        png = await blobToDataUrl(blob);
+      } catch {
+        png = null;
+      }
+    }
+    onChangeRef.current?.(scene, png);
+  }, [api]);
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  // Flush pending change when unmounting (e.g. switching question).
+  const emitRef = useRef(emit);
+  emitRef.current = emit;
+  useEffect(() => () => {
+    if (timer.current) {
+      window.clearTimeout(timer.current);
+      void emitRef.current();
+    }
+  }, []);
+
+  const handleChange = (elements: readonly unknown[]) => {
+    if (readOnly) return;
+    const version = getSceneVersion(elements as Parameters<typeof getSceneVersion>[0]);
+    if (lastVersion.current === null) {
+      lastVersion.current = version; // initial render
+      return;
+    }
+    if (version === lastVersion.current) return; // pointer moves, selection etc.
+    lastVersion.current = version;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = undefined;
+      void emit();
+    }, SAVE_DEBOUNCE_MS);
+  };
+
+  const insertTable = () => {
+    if (!api) return;
+    const st = api.getAppState();
+    const zoom = st.zoom.value;
+    const offset = (api.getSceneElements().length % 5) * 30;
+    const x = -st.scrollX + st.width / 2 / zoom - 130 + offset;
+    const y = -st.scrollY + st.height / 2 / zoom - 80 + offset;
+    const els = convertToExcalidrawElements([
+      {
+        type: 'rectangle',
+        x,
+        y,
+        width: 260,
+        height: 160,
+        strokeColor: '#1e1e1e',
+        backgroundColor: '#e7f5ff',
+        fillStyle: 'solid',
+        roundness: null,
+        label: { text: TABLE_TEMPLATE, textAlign: 'left', verticalAlign: 'top', fontSize: 16 },
+      },
+    ]);
+    api.updateScene({ elements: [...api.getSceneElements(), ...els], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    api.setActiveTool({ type: 'selection' });
+  };
+
+  return (
+    <div
+      className={
+        fullscreen
+          ? 'fixed inset-0 z-50 flex flex-col bg-white p-3'
+          : 'flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white'
+      }
+    >
+      {!readOnly && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5">
+          <button
+            type="button"
+            onClick={insertTable}
+            className="rounded bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700"
+          >
+            + Insert table
+          </button>
+          <span className="text-xs text-slate-500">
+            Double-click a box to edit its text · use the arrow tool (A) to connect tables · label relationships e.g. “1 : N”
+          </span>
+          <button
+            type="button"
+            onClick={() => setFullscreen((f) => !f)}
+            className="ml-auto rounded px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+          >
+            {fullscreen ? '✕ Exit full screen' : '⛶ Full screen'}
+          </button>
+        </div>
+      )}
+      <div style={fullscreen ? { flex: 1 } : { height }}>
+        <Excalidraw
+          excalidrawAPI={setApi}
+          initialData={{
+            elements: (initialScene?.elements ?? []) as never,
+            files: (initialScene?.files ?? {}) as BinaryFiles,
+            appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 2 as never },
+            scrollToContent: true,
+          }}
+          onChange={handleChange}
+          viewModeEnabled={readOnly}
+          UIOptions={{
+            canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: !readOnly, toggleTheme: false },
+            tools: { image: false },
+          }}
+        />
+      </div>
+    </div>
+  );
+}

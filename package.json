@@ -1,0 +1,47 @@
+{
+  "name": "wellnesstrack-assessment-portal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "seed:generate": "node scripts/generate-seed.mjs",
+    "data:zip": "bash scripts/package-sample-data.sh"
+  },
+  "dependencies": {
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/view": "^6.43.13",
+    "@excalidraw/excalidraw": "^0.18.1",
+    "@supabase/supabase-js": "^2.117.2",
+    "@tiptap/extension-table": "^3.31.4",
+    "@tiptap/extensions": "^3.31.4",
+    "@tiptap/pm": "^3.31.4",
+    "@tiptap/react": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
+    "@uiw/react-codemirror": "^4.25.12",
+    "docx": "^9.8.1",
+    "dompurify": "^3.4.16",
+    "file-saver": "^2.0.5",
+    "marked": "^18.0.14",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/file-saver": "^2.0.7",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}
