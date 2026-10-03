@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { cspPlugin } from './csp';
+import { cspPlugin } from './csp.ts';
 
 // base './' + HashRouter lets the build run from any GitHub Pages sub-path.
 export default defineConfig({
