@@ -9,6 +9,7 @@ export type SaveStatus = 'idle' | 'unsaved' | 'saving' | 'saved' | 'error';
 const DEBOUNCE_MS = 1500;
 const RETRY_MS = 5000;
 const storageKey = (uid: string) => `wt-pending-answers-${uid}`;
+const stampKey = (uid: string) => `wt-pending-at-${uid}`; // when each question was last edited locally
 
 type Pending = Record<string, AnswerPatch>;
 
@@ -22,6 +23,22 @@ function readPending(uid: string): Pending {
     return {}; // corrupt JSON
   }
 }
+
+function readStamps(uid: string): Record<string, number> {
+  try {
+    return JSON.parse(safeStorage.get(stampKey(uid)) ?? '{}') as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+function writeStamps(uid: string, stamps: Record<string, number>) {
+  if (Object.keys(stamps).length) safeStorage.set(stampKey(uid), JSON.stringify(stamps));
+  else safeStorage.remove(stampKey(uid));
+}
+
+/** An unsynced patch left by an earlier session, with the time of the local edit (null if unknown). */
+export interface RecoveredPatch { patch: AnswerPatch; at: number | null }
 
 function writePending(uid: string, p: Pending) {
   // Storage full / blocked: the server save still works, so this stays best-effort.
@@ -39,10 +56,13 @@ export function useAutosave(candidateId: string) {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [blocked, setBlocked] = useState<BlockedSave[]>([]);
   const pending = useRef<Pending>({});
+  const inflight = useRef<Pending>({}); // batch currently being sent; still unsynced until it succeeds
+  const stamps = useRef<Record<string, number>>({});
   const loaded = useRef(false);
   if (!loaded.current) { // once, not on every render (the stored JSON can be megabytes)
     loaded.current = true;
     pending.current = readPending(candidateId);
+    stamps.current = readStamps(candidateId);
   }
   const blockedRef = useRef<Record<string, BlockedSave>>({});
   const timer = useRef<number | undefined>(undefined);
@@ -50,9 +70,22 @@ export function useAutosave(candidateId: string) {
 
   const syncBlocked = () => setBlocked(Object.values(blockedRef.current));
 
+  // Mirror everything not yet confirmed by the server (the in-flight batch plus newer edits) to localStorage,
+  // so a tab closed mid-save cannot lose the batch that was being sent.
+  const persist = useCallback(() => {
+    const all: Pending = {};
+    for (const src of [inflight.current, pending.current]) {
+      for (const [q, p] of Object.entries(src)) all[q] = { ...all[q], ...p };
+    }
+    writePending(candidateId, all);
+    stamps.current = Object.fromEntries(Object.entries(stamps.current).filter(([q]) => q in all));
+    writeStamps(candidateId, stamps.current);
+  }, [candidateId]);
+
   const doSave = useCallback(async () => {
     const batch = pending.current;
     if (!Object.keys(batch).length) return;
+    inflight.current = batch;
     pending.current = {};
     setStatus('saving');
     const failed: Pending = {}; // transient failures: retried
@@ -82,22 +115,23 @@ export function useAutosave(candidateId: string) {
       }
     }
     syncBlocked();
+    inflight.current = {};
     if (Object.keys(failed).length) {
       // Keep newer edits on top of the failed ones.
       for (const [q, patch] of Object.entries(failed)) pending.current[q] = { ...patch, ...pending.current[q] };
-      writePending(candidateId, pending.current);
+      persist();
       setStatus('error');
       setLastError(firstError);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => void flush(), RETRY_MS);
     } else {
-      writePending(candidateId, pending.current);
+      persist();
       const hasBlocked = Object.keys(blockedRef.current).length > 0;
       setLastError(hasBlocked ? firstError : null);
       if (!hasBlocked) setSavedAt(new Date());
       setStatus(hasBlocked ? 'error' : Object.keys(pending.current).length ? 'unsaved' : 'saved');
     }
-  }, [candidateId]);
+  }, [candidateId, persist]);
 
   /** Resolves true only when everything is stored: nothing pending and nothing rejected. */
   const flush = useCallback(async (): Promise<boolean> => {
@@ -115,14 +149,23 @@ export function useAutosave(candidateId: string) {
     for (const part of splitPatch(patch)) delete blockedRef.current[`${questionId}:${part.group}`];
     syncBlocked();
     pending.current[questionId] = { ...pending.current[questionId], ...patch };
-    writePending(candidateId, pending.current);
+    stamps.current[questionId] = Date.now();
+    persist();
     setStatus('unsaved');
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void flush(), DEBOUNCE_MS);
-  }, [candidateId, flush]);
+  }, [flush, persist]);
 
-  /** Patches left over from a previous session that never reached the server. */
-  const takeRecovered = useCallback(() => ({ ...pending.current }), []);
+  /** Patches left over from a previous session that never reached the server, with their local edit times. */
+  const takeRecovered = useCallback((): Record<string, RecoveredPatch> => (
+    Object.fromEntries(Object.entries(pending.current).map(([q, patch]) => [q, { patch, at: stamps.current[q] ?? null }]))
+  ), []);
+
+  /** Forget recovered patches that must not be applied (the server already holds a newer version). */
+  const discardRecovered = useCallback((questionIds: string[]) => {
+    for (const q of questionIds) delete pending.current[q];
+    persist();
+  }, [persist]);
 
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => {
@@ -138,5 +181,5 @@ export function useAutosave(candidateId: string) {
     };
   }, [flush]);
 
-  return { status, lastError, savedAt, blocked, queue, flush, takeRecovered };
+  return { status, lastError, savedAt, blocked, queue, flush, takeRecovered, discardRecovered };
 }

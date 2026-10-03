@@ -6,6 +6,7 @@ import { useActiveTimer } from '../../lib/useActiveTimer';
 import { useAutosave, type SaveStatus } from '../../lib/useAutosave';
 import { flushDiagramSaves } from '../../lib/diagramFlush';
 import { safeStorage } from '../../lib/safeStorage';
+import { shouldApplyRecovered } from '../../lib/recovery';
 import { formatDateTime, formatDuration } from '../../lib/format';
 import { isAnswered } from '../../lib/marking';
 import type { Answer, AnswerPatch, Candidate, Question } from '../../lib/types';
@@ -30,6 +31,7 @@ export default function AssessmentPage() {
   const [answers, setAnswers] = useState<Record<string, Draft>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exiting, setExiting] = useState(false);
+  const [recoveredNotice, setRecoveredNotice] = useState<string | null>(null);
 
   const autosave = useAutosave(c.id);
   const timer = useActiveTimer({
@@ -52,11 +54,21 @@ export default function AssessmentPage() {
       }
       const map: Record<string, Draft> = {};
       for (const a of (aRes.data ?? []) as Answer[]) map[a.question_id] = a;
+      // Re-apply unsynced edits from an earlier session, unless the server holds a newer copy of that answer
+      // (saved afterwards, e.g. from another device): then the stale local edit must not overwrite it.
       const recovered = autosave.takeRecovered();
-      for (const [q, patch] of Object.entries(recovered)) map[q] = { ...map[q], ...patch };
+      const skipped: string[] = [];
+      for (const [q, { patch, at }] of Object.entries(recovered)) {
+        if (shouldApplyRecovered(map[q]?.updated_at, at)) map[q] = { ...map[q], ...patch };
+        else skipped.push(q);
+      }
+      if (skipped.length) {
+        autosave.discardRecovered(skipped);
+        setRecoveredNotice(`Unsaved edits from an earlier session were not restored for ${skipped.join(', ')}, because a newer version of ${skipped.length > 1 ? 'those answers was' : 'that answer was'} already saved.`);
+      }
       setAnswers(map);
       setQuestions((qRes.data ?? []) as Question[]);
-      if (Object.keys(recovered).length) void autosave.flush();
+      if (Object.keys(recovered).length > skipped.length) void autosave.flush();
     })();
   }, [c.id]);
 
@@ -169,6 +181,10 @@ export default function AssessmentPage() {
 
         {/* Main */}
         <main className="min-w-0 flex-1 p-4 md:p-8">
+          {recoveredNotice && (
+            <div className="mx-auto mb-4 max-w-5xl"><Alert kind="info">{recoveredNotice}</Alert></div>
+          )}
+
           <ExpiryBanner expiresAt={c.access_expires_at} onExpired={() => void refreshCandidate()} />
 
           {autosave.blocked.length > 0 && (

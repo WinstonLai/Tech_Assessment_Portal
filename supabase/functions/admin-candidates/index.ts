@@ -133,7 +133,12 @@ Deno.serve(async (req) => {
 
       case 'delete': {
         const id = String(body.candidate_id ?? '');
-        // Refuse to delete admins through this endpoint.
+        // Only delete existing candidates (as reset_password does); otherwise this would delete any other auth
+        // user that is not an admin.
+        const { data: existing, error: lookupErr } = await admin.from('candidates').select('id').eq('id', id).maybeSingle();
+        if (lookupErr) return json({ error: lookupErr.message }, 500);
+        if (!existing) return json({ error: 'Candidate not found' }, 404);
+        // Defence in depth: never delete an admin through this endpoint, even if a row ended up in both tables.
         const { data: isAdmin } = await admin.from('admins').select('user_id').eq('user_id', id).maybeSingle();
         if (isAdmin) return json({ error: 'Cannot delete an admin account here' }, 400);
         const { error } = await admin.auth.admin.deleteUser(id); // cascades to candidates/answers/marks

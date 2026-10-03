@@ -53,7 +53,7 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 
 **Answers**: one `answers` row per (candidate, question). It holds rich text (Tiptap JSON + HTML + plain text), `code` + `code_language` ('sql' or 'pyspark'), and `diagram_scene` (Excalidraw JSON) + `diagram_png` (a data-URL snapshot used for review and Word export).
 - `src/lib/useAutosave.ts` debounces partial patches. It upserts **one row per request** on purpose: a bulk upsert would null out the columns missing from other rows.
-- Unsynced patches are mirrored to localStorage and re-applied on the next load.
+- Unsynced patches (and the time of each local edit) are mirrored to localStorage and re-applied on the next load, unless the server already holds a newer copy of that answer (`shouldApplyRecovered` in `src/lib/recovery.ts`); the candidate is told when that happens.
 - Question `answer_type` (`rich_text` | `code` | `diagram_plus_text`) drives which editors `AssessmentPage` renders. Code questions also get an optional notes rich-text box.
 
 **Marking** (`src/lib/marking.ts`) is pure and runs in the admin's browser. `ReviewPage` and the "Auto-score submitted" button on `CandidatesPage` both go through `computeAutoMarks`. A candidate with no `marks` rows is "not marked" (blank in the CSV, left out of the ranking), never 0:

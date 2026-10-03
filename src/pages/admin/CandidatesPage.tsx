@@ -5,6 +5,7 @@ import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, formatDuration, isExpired, toLocalInput } from '../../lib/format';
 import { computeAutoMarks, sectionTotals } from '../../lib/marking';
+import { csvCell } from '../../lib/csv';
 import { buildSummaryReport } from '../../lib/exportDocx';
 import type { AnswerKey, Candidate, Mark, Question } from '../../lib/types';
 import { Alert, Button, Modal, Spinner, StatusBadge, inputClass } from '../../components/ui';
@@ -143,14 +144,13 @@ export default function CandidatesPage() {
       return;
     }
     const sections = [...new Set(questions.map((q) => q.section))];
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [
       ['name', 'email', 'status', 'active_time', 'active_seconds', 'started_at', 'submitted_at', ...sections.map((s) => `section_${s}`), 'total'].join(','),
       ...rows.map(({ candidate: c, marks: m }) => {
         // No marks rows = not scored yet: leave the score cells blank rather than exporting a misleading 0.
         const t = Object.keys(m).length ? sectionTotals(questions, m) : null;
         return [c.full_name, c.email, c.status, formatDuration(c.active_seconds), c.active_seconds, c.started_at, c.submitted_at,
-          ...sections.map((s) => (t ? t.sections.get(s)?.score ?? 0 : '')), t ? t.total : ''].map(esc).join(',');
+          ...sections.map((s) => (t ? t.sections.get(s)?.score ?? 0 : '')), t ? t.total : ''].map(csvCell).join(',');
       }),
     ];
     saveAs(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }), `WellnessTrack_Candidate_Summary_${stamp}.csv`);
