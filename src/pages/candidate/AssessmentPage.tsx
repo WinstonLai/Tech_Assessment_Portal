@@ -31,6 +31,7 @@ export default function AssessmentPage() {
   const [answers, setAnswers] = useState<Record<string, Draft>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exiting, setExiting] = useState(false);
+  const [exitFailed, setExitFailed] = useState(false);
   const [recoveredNotice, setRecoveredNotice] = useState<string | null>(null);
 
   const autosave = useAutosave(c.id);
@@ -96,9 +97,22 @@ export default function AssessmentPage() {
     return autosave.flush();
   }, [autosave]);
 
-  const saveAndExit = async () => {
+  // Signing out with unsynced edits leaves them only in this browser's localStorage. So when the save did not
+  // go through, stay signed in and say so; the candidate can retry or choose to exit anyway.
+  const saveAndExit = async (force = false) => {
     setExiting(true);
-    await flushAll();
+    setExitFailed(false);
+    let saved = false;
+    try {
+      saved = await flushAll();
+    } catch {
+      saved = false;
+    }
+    if (!saved && !force) {
+      setExiting(false);
+      setExitFailed(true);
+      return;
+    }
     await timer.pause();
     await signOut();
   };
@@ -124,7 +138,7 @@ export default function AssessmentPage() {
               <span className="text-xs text-slate-500">{timer.running ? 'Active' : 'Paused'}</span>
               <span className="font-mono text-sm font-semibold tabular-nums">{formatDuration(timer.seconds)}</span>
             </div>
-            <Button variant="secondary" onClick={saveAndExit} disabled={exiting}>
+            <Button variant="secondary" onClick={() => void saveAndExit()} disabled={exiting}>
               {exiting ? 'Saving…' : 'Save & exit'}
             </Button>
           </>
@@ -187,6 +201,20 @@ export default function AssessmentPage() {
 
           <ExpiryBanner expiresAt={c.access_expires_at} onExpired={() => void refreshCandidate()} />
 
+          {exitFailed && (
+            <div className="mx-auto mb-4 max-w-5xl">
+              <Alert>
+                <strong>You are still signed in because some answers could not be saved.</strong>{' '}
+                Check your connection and wait for “All changes saved”, then try Save &amp; exit again.
+                If you exit now, unsaved edits stay only in this browser and are restored the next time you sign in here.
+                <div className="mt-2 flex gap-2">
+                  <Button variant="secondary" onClick={() => void saveAndExit()} disabled={exiting}>Try again</Button>
+                  <Button variant="ghost" onClick={() => void saveAndExit(true)} disabled={exiting}>Exit anyway</Button>
+                </div>
+              </Alert>
+            </div>
+          )}
+
           {autosave.blocked.length > 0 && (
             <div className="mx-auto mb-4 max-w-5xl">
               <Alert>
@@ -197,14 +225,15 @@ export default function AssessmentPage() {
             </div>
           )}
 
-          {/* Mobile question picker */}
+          {/* Mobile question picker (the sidebar with progress is hidden on phones) */}
+          <p className="mb-1 text-xs text-slate-500 md:hidden">{answeredCount}/{questions.length} answered</p>
           <select
             className="mb-4 w-full rounded-lg border border-slate-300 p-2 text-sm md:hidden"
             value={current === REVIEW ? REVIEW : current.id}
             onChange={(e) => navigate(`/assessment/${e.target.value}`)}
             aria-label="Go to question"
           >
-            {questions.map((q) => <option key={q.id} value={q.id}>{q.id} · {q.title}</option>)}
+            {questions.map((q) => <option key={q.id} value={q.id}>{isAnswered(answers[q.id] as Answer) ? '✓ ' : ''}{q.id} · {q.title}</option>)}
             <option value={REVIEW}>Review & submit</option>
           </select>
 
@@ -269,7 +298,14 @@ function SaveIndicator({ status, error }: { status: SaveStatus; error: string | 
     idle: 'All changes saved', saved: 'All changes saved', unsaved: 'Unsaved changes…', saving: 'Saving…', error: 'Save failed — retrying',
   };
   const color = status === 'error' ? 'text-rose-600 dark:text-rose-400' : status === 'saved' || status === 'idle' ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500';
-  return <span className={`hidden text-xs sm:inline ${color}`} title={error ?? undefined} aria-live="polite">{text[status]}</span>;
+  const short = status === 'error' ? '⚠ Not saved' : status === 'saved' || status === 'idle' ? '✓ Saved' : '… Saving';
+  return (
+    <>
+      {/* A compact form on phones: the full sentence does not fit beside the timer. */}
+      <span className={`text-xs sm:hidden ${color}`} title={error ?? text[status]} aria-live="polite">{short}</span>
+      <span className={`hidden text-xs sm:inline ${color}`} title={error ?? undefined} aria-live="polite">{text[status]}</span>
+    </>
+  );
 }
 
 function QuestionView({ q, answer, update }: { q: Question; answer: Draft; update: (id: string, patch: AnswerPatch) => void }) {
@@ -279,7 +315,7 @@ function QuestionView({ q, answer, update }: { q: Question; answer: Draft; updat
         <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">{q.section_title}</p>
         <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-2xl font-bold">
-            <span className="text-slate-400">{q.id}.</span> {q.title}
+            <span className="text-slate-500">{q.id}.</span> {q.title}
           </h1>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">{q.max_score} marks</span>
         </div>

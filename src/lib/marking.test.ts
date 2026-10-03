@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { computeAutoMarks, extractDiagramText, scoreAnswer, sectionTotals } from './marking';
+import { computeAutoMarks, extractDiagramText, isAnswered, MAX_SCAN_CHARS, richTextToPlain, scoreAnswer, sectionTotals } from './marking';
 import type { Answer, Mark, Question, RubricItem } from './types';
 
 const rubric: RubricItem[] = [
@@ -9,7 +9,16 @@ const rubric: RubricItem[] = [
   { id: 'x-3', label: 'explains', points: 1, match: 'any', source: 'text', patterns: ['latest'] },
 ];
 
-const ans = (p: Partial<Answer>) => ({ rich_text_plain: null, code: null, diagram_scene: null, ...p }) as Answer;
+/** A Tiptap document with one paragraph per line, as the rich-text editor stores it. */
+const doc = (text: string) => ({
+  type: 'doc',
+  content: text.split('\n').map((line) => ({ type: 'paragraph', ...(line ? { content: [{ type: 'text', text: line }] } : {}) })),
+});
+
+const ans = (p: Partial<Answer> & { text?: string }) => {
+  const { text, ...rest } = p;
+  return { rich_text_json: text === undefined ? null : doc(text), code: null, diagram_scene: null, ...rest } as Answer;
+};
 
 describe('scoreAnswer', () => {
   it('scores zero for an empty / missing answer', () => {
@@ -18,7 +27,7 @@ describe('scoreAnswer', () => {
   });
 
   it('awards any/all items case-insensitively', () => {
-    const r = scoreAnswer(ans({ code: 'SELECT ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ts DESC)', rich_text_plain: 'keep the LATEST' }), rubric, 6);
+    const r = scoreAnswer(ans({ code: 'SELECT ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ts DESC)', text: 'keep the LATEST' }), rubric, 6);
     expect(r.score).toBe(6);
     expect(r.hits.every((h) => h.matched)).toBe(true);
   });
@@ -30,7 +39,7 @@ describe('scoreAnswer', () => {
   });
 
   it('falls back to notes text when code box is empty', () => {
-    expect(scoreAnswer(ans({ rich_text_plain: 'rank( ) ...' }), rubric, 6).score).toBe(2);
+    expect(scoreAnswer(ans({ text: 'rank( ) ...' }), rubric, 6).score).toBe(2);
   });
 
   it('reads text labels from diagrams and ignores deleted elements', () => {
@@ -48,10 +57,71 @@ describe('scoreAnswer', () => {
   });
 });
 
+describe('untrusted answer content', () => {
+  it('ignores the client-written rich_text_plain: scoring uses the stored document', () => {
+    // Hidden keywords in rich_text_plain must not score; the reviewer only ever sees the document.
+    const stuffed = { ...ans({ text: 'I am not sure.' }), rich_text_plain: 'latest row_number partition by user_id desc' } as Answer;
+    expect(scoreAnswer(stuffed, rubric, 6).score).toBe(0);
+  });
+
+  it('extracts text from nested lists, tables and hard breaks with line separation', () => {
+    const json = { type: 'doc', content: [
+      { type: 'bulletList', content: [
+        { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }] },
+        { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'two' }, { type: 'hardBreak' }, { type: 'text', text: 'three' }] }] },
+      ] },
+      { type: 'table', content: [{ type: 'tableRow', content: [
+        { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }] },
+        { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] },
+      ] }] },
+    ] };
+    expect(richTextToPlain(json).split('\n').filter(Boolean)).toEqual(['one', 'two', 'three', 'a', 'b']);
+  });
+
+  it('survives malformed and absurdly deep documents without throwing', () => {
+    expect(richTextToPlain(null)).toBe('');
+    expect(richTextToPlain('x')).toBe('');
+    // Bare strings in `content` are not text nodes, so they cannot smuggle in text the editor would never show.
+    expect(richTextToPlain({ type: 'doc', content: ['hidden', { type: 'paragraph', content: ['hidden'] }] })).toBe('\n');
+    expect(richTextToPlain({ type: 'doc', content: 'nope' })).toBe('');
+    let deep: Record<string, unknown> = { type: 'text', text: 'bottom' };
+    for (let i = 0; i < 200_000; i++) deep = { type: 'blockquote', content: [deep] }; // would overflow a recursive walk
+    expect(() => richTextToPlain(deep)).not.toThrow();
+  });
+
+  it('stops reading a document at the scan limit', () => {
+    const long = doc('x'.repeat(MAX_SCAN_CHARS * 5));
+    expect(richTextToPlain(long).length).toBe(MAX_SCAN_CHARS);
+  });
+
+  it('ignores invisible (opacity 0) diagram labels and non-array element lists', () => {
+    const scene = { elements: [
+      { type: 'text', text: 'visible', opacity: 100 },
+      { type: 'text', text: 'hidden keywords', opacity: 0 },
+    ] };
+    expect(extractDiagramText(scene)).toBe('visible');
+    expect(extractDiagramText({ elements: 'nope' } as never)).toBe('');
+  });
+
+  it('scores adversarial input quickly (quadratic patterns cannot freeze the reviewer)', () => {
+    const slow: RubricItem[] = [{ id: 's', label: 's', points: 1, match: 'any', source: 'any', patterns: ['pk.*neverpresent'] }];
+    const evil = ans({ text: 'pk '.repeat(150_000), code: 'pk '.repeat(100_000) });
+    const t0 = Date.now();
+    expect(scoreAnswer(evil, slow, 1).score).toBe(0);
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
+  it('isAnswered reads the document, not rich_text_plain', () => {
+    expect(isAnswered(ans({ text: 'hello' }))).toBe(true);
+    expect(isAnswered(ans({ text: '   ' }))).toBe(false);
+    expect(isAnswered({ ...ans({}), rich_text_plain: 'hidden' } as Answer)).toBe(false);
+  });
+});
+
 describe('computeAutoMarks', () => {
   const qs = [{ id: 'A1', max_score: 6 }, { id: 'A2', max_score: 4 }, { id: 'A3', max_score: 2 }];
   const keys = { A1: { rubric }, A2: { rubric } }; // A3 has no answer key
-  const answers = { A1: ans({ code: 'row_number() over (partition by user_id order by ts desc)', rich_text_plain: 'latest' }) };
+  const answers = { A1: ans({ code: 'row_number() over (partition by user_id order by ts desc)', text: 'latest' }) };
 
   it('creates marks for every keyed question, including unanswered ones, and skips keyless ones', () => {
     const { changed, marks } = computeAutoMarks('c1', qs, keys, answers, {});
@@ -98,14 +168,14 @@ describe.skipIf(!existsSync(KEY))('real answer key', () => {
   for (const q of key as { id: string; max_score: number; answer_type: string; model_answer_md: string; rubric: RubricItem[] }[]) {
     it(`${q.id}: model answer scores >= 85%`, () => {
       const a = q.answer_type === 'code'
-        ? ans({ code: q.model_answer_md, rich_text_plain: '' })
-        : ans({ rich_text_plain: q.model_answer_md });
+        ? ans({ code: q.model_answer_md, text: '' })
+        : ans({ text: q.model_answer_md });
       const r = scoreAnswer(a, q.rubric, q.max_score);
       const missed = r.hits.filter((h) => !h.matched).map((h) => h.label);
       expect(r.score / q.max_score, `missed: ${missed.join('; ')}`).toBeGreaterThanOrEqual(0.85);
     });
     it(`${q.id}: an off-topic answer scores <= 20%`, () => {
-      const r = scoreAnswer(ans({ code: 'print("hello world")', rich_text_plain: 'I am not sure.' }), q.rubric, q.max_score);
+      const r = scoreAnswer(ans({ code: 'print("hello world")', text: 'I am not sure.' }), q.rubric, q.max_score);
       expect(r.score / q.max_score).toBeLessThanOrEqual(0.2);
     });
   }

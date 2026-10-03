@@ -1,25 +1,77 @@
 import type { Answer, AnswerKey, DiagramScene, Question, RubricHit, RubricItem, Mark } from './types';
 
-type AnswerLike = Pick<Answer, 'rich_text_plain' | 'code' | 'diagram_scene'> | null | undefined;
+// rich_text_plain is deliberately not read: the browser writes it independently of rich_text_json, so through the
+// REST API a candidate could put hidden keywords in it that the reviewer never sees. The text is derived from the
+// stored JSON instead, which is also what the review page and the Word export render.
+type AnswerLike = Pick<Answer, 'rich_text_json' | 'code' | 'diagram_scene'> | null | undefined;
 
-/** Pulls all text labels out of an Excalidraw scene (entity names, PK/FK lines, relationship labels). */
-export function extractDiagramText(scene: DiagramScene | null | undefined): string {
-  if (!scene?.elements) return '';
-  return scene.elements
-    .filter((el) => el.type === 'text' && !el.isDeleted)
-    .map((el) => String(el.originalText ?? el.text ?? ''))
-    .join('\n');
+/**
+ * Longest stretch of any one answer source that is matched against the rubric regexes. The database allows
+ * far more (500k chars of text, 20 MB of diagram), and a pattern such as `a.*b` is quadratic on adversarial
+ * input, so one candidate could freeze the admin's browser while their answer is scored. Real answers are a
+ * few thousand characters.
+ */
+export const MAX_SCAN_CHARS = 20_000;
+
+const END_OF_BLOCK = Symbol('end of block'); // not a string, so candidate JSON can never collide with it
+const BLOCK_NODES = new Set([
+  'paragraph', 'heading', 'blockquote', 'codeBlock', 'listItem', 'bulletList', 'orderedList',
+  'table', 'tableRow', 'tableCell', 'tableHeader',
+]);
+
+/**
+ * Plain text of a Tiptap document, at most `limit` chars. Iterative on purpose: the JSON is candidate-controlled,
+ * and a deeply nested document would overflow the stack of a recursive walk.
+ */
+export function richTextToPlain(doc: unknown, limit = MAX_SCAN_CHARS): string {
+  const out: string[] = [];
+  let length = 0;
+  const stack: unknown[] = [doc];
+  while (stack.length && length < limit) {
+    const item = stack.pop();
+    if (item === END_OF_BLOCK) { out.push('\n'); length += 1; continue; }
+    if (!item || typeof item !== 'object') continue; // bare strings are not text nodes; the editor would not render them
+    const node = item as { type?: unknown; text?: unknown; content?: unknown };
+    if (node.type === 'text') {
+      if (typeof node.text === 'string') { out.push(node.text); length += node.text.length; }
+      continue;
+    }
+    if (node.type === 'hardBreak') { out.push('\n'); length += 1; continue; }
+    if (typeof node.type === 'string' && BLOCK_NODES.has(node.type)) stack.push(END_OF_BLOCK); // popped after the children
+    if (Array.isArray(node.content)) {
+      for (let i = node.content.length - 1; i >= 0; i--) stack.push(node.content[i]);
+    }
+  }
+  return out.join('').slice(0, limit);
 }
 
-export function answerSources(answer: AnswerLike) {
-  const text = answer?.rich_text_plain ?? '';
-  const code = answer?.code ?? '';
-  const diagram = extractDiagramText(answer?.diagram_scene);
+/** Pulls the visible text labels out of an Excalidraw scene (entity names, PK/FK lines, relationship labels). */
+export function extractDiagramText(scene: DiagramScene | null | undefined, limit = MAX_SCAN_CHARS): string {
+  const elements = scene?.elements;
+  if (!Array.isArray(elements)) return '';
+  const parts: string[] = [];
+  let length = 0;
+  for (const el of elements) {
+    // Invisible (opacity 0) labels would let a candidate stuff keywords the reviewer cannot see.
+    if (el?.type !== 'text' || el.isDeleted || el.opacity === 0) continue;
+    const text = String(el.originalText ?? el.text ?? '');
+    parts.push(text);
+    length += text.length + 1;
+    if (length >= limit) break;
+  }
+  return parts.join('\n').slice(0, limit);
+}
+
+export function answerSources(answer: AnswerLike, limit = MAX_SCAN_CHARS) {
+  const text = richTextToPlain(answer?.rich_text_json, limit);
+  const code = (answer?.code ?? '').slice(0, limit);
+  const diagram = extractDiagramText(answer?.diagram_scene, limit);
   return { text, code, diagram, any: [text, code, diagram].join('\n') };
 }
 
 export function isAnswered(answer: AnswerLike): boolean {
-  const s = answerSources(answer);
+  // Only emptiness matters here, so look at a short prefix; this runs for every question on each keystroke.
+  const s = answerSources(answer, 2000);
   return Boolean(s.text.trim() || s.code.trim() || (answer?.diagram_scene?.elements?.length ?? 0) > 0);
 }
 

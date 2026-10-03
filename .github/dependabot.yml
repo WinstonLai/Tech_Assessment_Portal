@@ -1,0 +1,11 @@
+# Weekly update PRs. Actions are pinned to commit SHAs; Dependabot bumps the SHA and the version comment.
+# Do not accept Excalidraw "major" suggestions blindly: package.json `overrides` pin patched transitive deps (see CLAUDE.md).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

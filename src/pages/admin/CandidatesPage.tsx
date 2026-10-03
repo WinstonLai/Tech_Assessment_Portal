@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/auth';
 import { formatDateTime, formatDuration, isExpired, toLocalInput } from '../../lib/format';
 import { computeAutoMarks, sectionTotals } from '../../lib/marking';
 import { csvCell } from '../../lib/csv';
+import { fetchAllRows } from '../../lib/paginate';
 import { buildSummaryReport } from '../../lib/exportDocx';
 import type { AnswerKey, Candidate, Mark, Question } from '../../lib/types';
 import { Alert, Button, Modal, Spinner, StatusBadge, inputClass } from '../../components/ui';
@@ -35,14 +36,19 @@ export default function CandidatesPage() {
   const [creds, setCreds] = useState<Credentials | null>(null);
   const [editExpiry, setEditExpiry] = useState<Candidate | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Candidate | null>(null);
+  const [confirmReset, setConfirmReset] = useState<Candidate | null>(null);
+  const [confirmReopen, setConfirmReopen] = useState<Candidate | null>(null);
+  const [extendOnReopen, setExtendOnReopen] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [scoring, setScoring] = useState<string | null>(null); // progress text while bulk auto-scoring
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    // Paged: PostgREST silently truncates at 1000 rows, which is ~76 candidates' marks, and a truncated
+    // marks list would show wrong totals and a wrong ranking without any error.
     const [c, m, q] = await Promise.all([
-      supabase.from('candidates').select('*').order('created_at', { ascending: false }),
-      supabase.from('marks').select('candidate_id,question_id,auto_score,final_score'),
+      fetchAllRows((from, to) => supabase.from('candidates').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('marks').select('candidate_id,question_id,auto_score,final_score').order('candidate_id').order('question_id').range(from, to)),
       supabase.from('questions').select('*').order('sort_order'),
     ]);
     const err = c.error ?? m.error ?? q.error;
@@ -53,6 +59,9 @@ export default function CandidatesPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // The table can be long; make sure a failed row action is not reported out of sight above the fold.
+  useEffect(() => { if (error) window.scrollTo({ top: 0, behavior: 'smooth' }); }, [error]);
 
   const marksByCandidate = useMemo(() => {
     const map = new Map<string, Record<string, Mark>>();
@@ -89,7 +98,7 @@ export default function CandidatesPage() {
         setScoring(`Scoring ${i + 1} of ${targets.length}…`);
         // One candidate at a time: diagram scenes can be large.
         const [a, m] = await Promise.all([
-          supabase.from('answers').select('question_id,rich_text_plain,code,diagram_scene').eq('candidate_id', c.id),
+          supabase.from('answers').select('question_id,rich_text_json,code,diagram_scene').eq('candidate_id', c.id),
           supabase.from('marks').select('*').eq('candidate_id', c.id),
         ]);
         if (a.error || m.error) { failed.push(c.email); continue; }
@@ -129,8 +138,10 @@ export default function CandidatesPage() {
     await load();
   });
 
-  const reopen = (c: Candidate) => act(c, async () => {
-    const { error } = await supabase.from('candidates').update({ status: 'in_progress', submitted_at: null }).eq('id', c.id);
+  const reopen = (c: Candidate, extend: boolean) => act(c, async () => {
+    const patch: Record<string, unknown> = { status: 'in_progress', submitted_at: null };
+    if (extend) patch.access_expires_at = new Date(Date.now() + DEFAULT_ACCESS_DAYS * 86400_000).toISOString();
+    const { error } = await supabase.from('candidates').update(patch).eq('id', c.id);
     if (error) throw error;
     await load();
   });
@@ -195,7 +206,11 @@ export default function CandidatesPage() {
               </thead>
               <tbody>
                 {visible.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No candidates yet. Click “Add candidate” to issue access.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    {error && candidates.length === 0
+                      ? <>Could not load candidates. <button className="underline" onClick={() => void load()}>Try again</button></>
+                      : filter ? 'No candidates match your search.' : 'No candidates yet. Click “Add candidate” to issue access.'}
+                  </td></tr>
                 )}
                 {visible.map((c) => {
                   const expired = isExpired(c.access_expires_at);
@@ -219,18 +234,18 @@ export default function CandidatesPage() {
                           {formatDateTime(c.access_expires_at)}
                         </button>
                       </td>
-                      <td className="px-4 py-3 font-semibold">{score == null ? <span className="font-normal text-slate-400">not marked</span> : `${score} / ${maxTotal}`}</td>
+                      <td className="px-4 py-3 font-semibold">{score == null ? <span className="font-normal text-slate-500">not marked</span> : `${score} / ${maxTotal}`}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap justify-end gap-1">
                           <Link to={`/admin/candidates/${c.id}`} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
                             {c.status === 'submitted' ? 'Mark & export' : 'View'}
                           </Link>
-                          <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => resetPassword(c)}>New password</Button>
+                          <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => setConfirmReset(c)}>New password</Button>
                           <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => toggleActive(c)}>
                             {c.is_active ? 'Disable' : 'Enable'}
                           </Button>
                           {c.status === 'submitted' && (
-                            <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => reopen(c)}>Reopen</Button>
+                            <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => { setExtendOnReopen(true); setConfirmReopen(c); }}>Reopen</Button>
                           )}
                           <Button variant="ghost" className="!px-2.5 !py-1.5 !text-xs text-rose-700 dark:text-rose-300" disabled={busy} onClick={() => setConfirmDelete(c)}>Delete</Button>
                         </div>
@@ -256,6 +271,49 @@ export default function CandidatesPage() {
       />
       <CredentialsModal creds={creds} onClose={() => setCreds(null)} />
       <ExpiryModal candidate={editExpiry} onClose={() => setEditExpiry(null)} onSaved={async () => { setEditExpiry(null); await load(); }} />
+      <Modal
+        open={!!confirmReset}
+        title="Issue a new password?"
+        onClose={() => setConfirmReset(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmReset(null)}>Cancel</Button>
+            <Button onClick={() => { const c = confirmReset!; setConfirmReset(null); void resetPassword(c); }}>Issue new password</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          The current password for <strong>{confirmReset?.email}</strong> stops working for new sign-ins straight away, so they
+          cannot sign back in until you send them the new one. A candidate who is already signed in is not affected.
+        </p>
+      </Modal>
+      <Modal
+        open={!!confirmReopen}
+        title="Reopen this submission?"
+        onClose={() => setConfirmReopen(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmReopen(null)}>Cancel</Button>
+            <Button onClick={() => { const c = confirmReopen!; setConfirmReopen(null); void reopen(c, extendOnReopen && isExpired(c.access_expires_at)); }}>Reopen</Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-600">
+          <p>
+            <strong>{confirmReopen?.email}</strong> will be able to edit their answers and submit again. Their submitted time is cleared;
+            marks and comments you already entered are kept.
+          </p>
+          {confirmReopen && isExpired(confirmReopen.access_expires_at) && (
+            <label className="flex items-start gap-2">
+              <input type="checkbox" className="mt-0.5" checked={extendOnReopen} onChange={(e) => setExtendOnReopen(e.target.checked)} />
+              <span>Their access has expired, so they could not sign in. Also extend access by {DEFAULT_ACCESS_DAYS} days from now.</span>
+            </label>
+          )}
+          {confirmReopen && !confirmReopen.is_active && (
+            <p className="text-amber-800 dark:text-amber-300">This candidate is currently disabled. Click “Enable” as well, or they still cannot sign in.</p>
+          )}
+        </div>
+      </Modal>
       <Modal
         open={!!confirmDelete}
         title="Delete candidate?"
@@ -341,7 +399,7 @@ Email: ${c.email}
 Password: ${password}
 Access expires: ${formatDateTime(c.access_expires_at)}
 
-You can save and exit at any time and resume later; only your active time is recorded. Please submit before your access expires.
+You can save and exit at any time and resume later. Your active time is shown on screen; the total time from your first answer to your submission is also recorded. Please submit before your access expires.
 
 Best regards`;
 

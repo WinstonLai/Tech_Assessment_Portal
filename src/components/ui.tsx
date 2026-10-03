@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { renderMarkdown } from '../lib/markdown';
 import { useTheme } from '../lib/theme';
 
@@ -41,14 +41,43 @@ export function Modal({ open, title, onClose, children, footer, wide, dismissibl
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, dismissible, onClose]);
+  // Keyboard users: move focus into the dialog, keep Tab inside it while it is open, and put focus back on the
+  // control that opened it afterwards. (aria-modal alone does not stop Tab from reaching the page behind.)
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const root = dialogRef.current;
+    const focusable = () => (root
+      ? Array.from(root.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])'))
+      : []);
+    (focusable()[0] ?? root)?.focus();
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !root) return;
+      const items = focusable();
+      if (!items.length) { e.preventDefault(); root.focus(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const outside = !root.contains(document.activeElement);
+      if (e.shiftKey && (outside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (outside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onTab);
+    return () => {
+      document.removeEventListener('keydown', onTab);
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={dismissible ? onClose : undefined}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-surface shadow-xl`}
+        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-surface shadow-xl outline-none`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="border-b border-slate-200 px-5 py-3">

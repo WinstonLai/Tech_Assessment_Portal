@@ -18,7 +18,7 @@ import {
 import { marked, type Token, type Tokens } from 'marked';
 import type { JSONContent } from '@tiptap/react';
 import type { Answer, AnswerKey, Candidate, Mark, Question } from './types';
-import { effectiveScore, sectionTotals } from './marking';
+import { effectiveScore, richTextToPlain, sectionTotals } from './marking';
 import { formatDateTime, formatDuration } from './format';
 import { safePngDataUrl } from './markdown';
 
@@ -346,7 +346,7 @@ export async function buildCandidateReport(input: ReportInput): Promise<Blob> {
       body.push(...codeBlock(a.code, a.code_language === 'pyspark' ? 'PySpark' : 'SQL'));
       any = true;
     }
-    if (a?.rich_text_json && a.rich_text_plain?.trim()) {
+    if (a?.rich_text_json && richTextToPlain(a.rich_text_json, 2000).trim()) {
       if (q.answer_type !== 'rich_text') body.push(label(q.answer_type === 'code' ? 'Notes' : 'Explanation'));
       body.push(...blocksTiptap(a.rich_text_json.content));
       any = true;

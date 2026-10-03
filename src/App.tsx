@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-
 import { AuthProvider, useAuth } from './lib/auth';
 import { supabaseConfigured } from './lib/supabase';
 import { isExpired } from './lib/format';
+import { hasUnsyncedEdits } from './lib/useAutosave';
 import { Alert, Button, FullPageSpinner } from './components/ui';
 import LoginPage from './pages/LoginPage';
 import WelcomePage from './pages/candidate/WelcomePage';
@@ -69,9 +70,9 @@ function RequireCandidate() {
   if (candidate.status === 'submitted') {
     return location.pathname === '/submitted' ? <Outlet /> : <Navigate to="/submitted" replace />;
   }
-  if (!candidate.is_active) return <NoAccess message="Your access to this assessment has been disabled. Please contact the recruiter." />;
+  if (!candidate.is_active) return <NoAccess message="Your access to this assessment has been disabled. Please contact the recruiter." unsavedFor={candidate.id} />;
   if (isExpired(candidate.access_expires_at)) {
-    return <NoAccess message="Your access window for this assessment has expired. Please contact the recruiter if you need more time." />;
+    return <NoAccess message="Your access window for this assessment has expired. Please contact the recruiter if you need more time." unsavedFor={candidate.id} />;
   }
   return <Outlet />;
 }
@@ -101,13 +102,20 @@ function RoleLookupFailed() {
   );
 }
 
-function NoAccess({ message }: { message: string }) {
+function NoAccess({ message, unsavedFor }: { message: string; unsavedFor?: string }) {
   const { signOut } = useAuth();
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-surface p-6 shadow-sm">
         <h1 className="text-lg font-semibold">Access unavailable</h1>
         <p className="text-sm text-slate-600">{message}</p>
+        {unsavedFor && hasUnsyncedEdits(unsavedFor) && (
+          <Alert kind="warning">
+            Some of your most recent edits may not have been saved before access ended. They are kept in this browser:
+            if the recruiter restores your access, sign in again on this device and they will be restored.
+            Do not clear this browser's site data until then.
+          </Alert>
+        )}
         <Button variant="secondary" onClick={() => signOut()}>Sign out</Button>
       </div>
     </div>
