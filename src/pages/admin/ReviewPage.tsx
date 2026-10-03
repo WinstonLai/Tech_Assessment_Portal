@@ -5,7 +5,7 @@ import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, formatDuration } from '../../lib/format';
 import { effectiveScore, scoreAnswer, sectionTotals } from '../../lib/marking';
-import { sanitizeHtml } from '../../lib/markdown';
+import { safePngDataUrl, sanitizeHtml } from '../../lib/markdown';
 import { buildCandidateReport } from '../../lib/exportDocx';
 import type { Answer, AnswerKey, Candidate, Mark, Question } from '../../lib/types';
 import { Alert, Button, Markdown, Spinner, StatusBadge, inputClass } from '../../components/ui';
@@ -199,6 +199,8 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
     if (await onSave({ reviewer_comment: comment || null })) flash('Comment saved');
   };
 
+  // Regex over a multi-MB base64 string: compute once, not on every keystroke in the score/comment inputs.
+  const pngSrc = useMemo(() => safePngDataUrl(answer?.diagram_png), [answer?.diagram_png]);
   const hasRich = Boolean(answer?.rich_text_plain?.trim());
   const empty = !answer || (!hasRich && !answer.code?.trim() && !answer.diagram_scene?.elements?.length);
 
@@ -227,8 +229,8 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
                 <Suspense fallback={<Spinner />}>
                   <DiagramEditor initialScene={answer.diagram_scene} readOnly height={460} />
                 </Suspense>
-              ) : answer.diagram_png ? (
-                <img src={answer.diagram_png} alt={`${q.id} diagram`} className="max-h-[460px] w-full rounded border border-slate-200 object-contain" />
+              ) : pngSrc ? (
+                <img src={pngSrc} alt={`${q.id} diagram`} className="max-h-[460px] w-full rounded border border-slate-200 object-contain" />
               ) : null}
               <button className="text-xs text-indigo-700 hover:underline" onClick={() => setInteractive((v) => !v)}>
                 {interactive ? 'Show image' : 'Open interactive view (zoom / pan)'}

@@ -20,6 +20,7 @@ import type { JSONContent } from '@tiptap/react';
 import type { Answer, AnswerKey, Candidate, Mark, Question } from './types';
 import { effectiveScore, sectionTotals } from './marking';
 import { formatDateTime, formatDuration } from './format';
+import { safePngDataUrl } from './markdown';
 
 const MONO = 'Consolas';
 const CODE_SHADE = { type: ShadingType.CLEAR, color: 'auto', fill: 'F1F5F9' } as const;
@@ -250,7 +251,9 @@ function blocksTiptap(nodes: JSONContent[] | undefined, level = 0): (Paragraph |
 }
 
 // ---------------------------------------------------------------- images
-async function pngFromDataUrl(dataUrl: string): Promise<ImageRun | null> {
+async function pngFromDataUrl(value: string): Promise<ImageRun | null> {
+  const dataUrl = safePngDataUrl(value); // candidate-supplied: never let `new Image()` fetch a remote URL
+  if (!dataUrl) return null;
   try {
     const img = new Image();
     img.src = dataUrl;

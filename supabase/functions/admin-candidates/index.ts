@@ -101,20 +101,31 @@ Deno.serve(async (req) => {
 
       case 'reset_password': {
         const id = String(body.candidate_id ?? '');
-        const password = generatePassword();
-        const { error: updErr } = await admin.auth.admin.updateUserById(id, { password });
-        if (updErr) return json({ error: updErr.message }, 400);
+        // Only rotate passwords of existing candidates; otherwise an admin's (or any other auth user's)
+        // password could be changed here, silently locking that account out.
+        const { data: existing, error: lookupErr } = await admin.from('candidates').select('id').eq('id', id).maybeSingle();
+        if (lookupErr) return json({ error: lookupErr.message }, 500);
+        if (!existing) return json({ error: 'Candidate not found' }, 404);
+        if (body.access_expires_at && Number.isNaN(Date.parse(String(body.access_expires_at)))) {
+          return json({ error: 'Invalid expiry' }, 400);
+        }
 
         const patch: Record<string, unknown> = {
           password_issued_at: new Date().toISOString(),
           is_active: true,
         };
         if (body.access_expires_at) {
-          if (Number.isNaN(Date.parse(String(body.access_expires_at)))) return json({ error: 'Invalid expiry' }, 400);
           patch.access_expires_at = new Date(String(body.access_expires_at)).toISOString();
         }
+        // Update the row *before* rotating the password: if the DB write fails nothing has changed, and
+        // if the rotation fails the old password still works and the admin sees the error and retries.
+        // The reverse order could rotate the password and then fail without ever returning it.
         const { data: candidate, error } = await admin.from('candidates').update(patch).eq('id', id).select().single();
         if (error) return json({ error: error.message }, 400);
+
+        const password = generatePassword();
+        const { error: updErr } = await admin.auth.admin.updateUserById(id, { password });
+        if (updErr) return json({ error: updErr.message }, 400);
         return json({ candidate, password });
       }
 
