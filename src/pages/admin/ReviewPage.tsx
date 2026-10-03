@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { saveAs } from 'file-saver';
 import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { formatDateTime, formatDuration } from '../../lib/format';
+import { elapsedSeconds, formatDateTime, formatDuration } from '../../lib/format';
 import { computeAutoMarks, effectiveScore, sectionTotals } from '../../lib/marking';
 import { safePngDataUrl, sanitizeHtml } from '../../lib/markdown';
 import { buildCandidateReport } from '../../lib/exportDocx';
@@ -112,8 +112,12 @@ export default function ReviewPage() {
                   <StatusBadge status={candidate.status} />
                 </div>
                 <p className="text-sm text-slate-600">{candidate.email}</p>
-                <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+                <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-5">
                   <div><dt className="text-slate-500">Active time</dt><dd className="font-mono font-semibold">{formatDuration(candidate.active_seconds)}</dd></div>
+                  <div>
+                    <dt className="text-slate-500" title="First answer saved to submission. Set by the server, so it cannot be shortened by the candidate; includes breaks.">Elapsed</dt>
+                    <dd className="font-mono font-semibold">{(() => { const e = elapsedSeconds(candidate.started_at, candidate.submitted_at); return e == null ? '—' : formatDuration(e); })()}</dd>
+                  </div>
                   <div><dt className="text-slate-500">Started</dt><dd>{formatDateTime(candidate.started_at)}</dd></div>
                   <div><dt className="text-slate-500">Submitted</dt><dd>{formatDateTime(candidate.submitted_at)}</dd></div>
                   <div><dt className="text-slate-500">Access until</dt><dd>{formatDateTime(candidate.access_expires_at)}</dd></div>

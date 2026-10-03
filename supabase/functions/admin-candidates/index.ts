@@ -110,9 +110,11 @@ Deno.serve(async (req) => {
           return json({ error: 'Invalid expiry' }, 400);
         }
 
+        // is_active is deliberately left alone: an admin who disabled a candidate must not have that undone by
+        // issuing a password. The UI warns when the candidate is still disabled. Note that rotating the password
+        // does not end sessions that are already signed in; "Disable" is what blocks those immediately.
         const patch: Record<string, unknown> = {
           password_issued_at: new Date().toISOString(),
-          is_active: true,
         };
         if (body.access_expires_at) {
           patch.access_expires_at = new Date(String(body.access_expires_at)).toISOString();

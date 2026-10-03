@@ -243,8 +243,9 @@ export default function CandidatesPage() {
           </div>
         )}
         <p className="text-xs text-slate-500">
-          “New password” issues a fresh password (the old one stops working) and re-enables access; if access had expired it is extended by {DEFAULT_ACCESS_DAYS} days.
-          “Disable” blocks access immediately, even for a candidate who is already signed in.
+          “New password” issues a fresh password (the old one stops working for new sign-ins) and, if access had expired, extends it by {DEFAULT_ACCESS_DAYS} days.
+          It does not re-enable a disabled candidate and does not sign out a candidate who is already signed in.
+          “Disable” blocks access immediately, even for a candidate who is already signed in; “Enable” restores it.
         </p>
       </main>
 
@@ -359,6 +360,9 @@ Best regards`;
       footer={<Button onClick={onClose}>Done</Button>}>
       <div className="space-y-4">
         <Alert kind="warning">This password is shown only once. Copy it now — you can always issue a new one later.</Alert>
+        {!c.is_active && (
+          <Alert kind="warning">This candidate is currently <strong>disabled</strong> and cannot sign in. Click “Enable” on the candidates page before sending these details.</Alert>
+        )}
         {copied === 'failed' && <Alert>Could not access the clipboard. Select the text on screen and copy it manually.</Alert>}
         <div className="grid grid-cols-[110px_1fr_auto] items-center gap-2 text-sm">
           <span className="text-slate-500">Email</span><span className="font-mono">{c.email}</span>

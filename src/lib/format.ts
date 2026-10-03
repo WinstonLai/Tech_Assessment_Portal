@@ -20,6 +20,16 @@ export function toLocalInput(iso: string | Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * Wall-clock seconds from the server-stamped first activity to submission (or `now` while in progress).
+ * Unlike active_seconds, which the browser reports, the candidate cannot shorten this. Null if never started.
+ */
+export function elapsedSeconds(startedAt: string | null, submittedAt: string | null, now = Date.now()): number | null {
+  if (!startedAt) return null;
+  const end = submittedAt ? new Date(submittedAt).getTime() : now;
+  return Math.max(0, Math.floor((end - new Date(startedAt).getTime()) / 1000));
+}
+
 export function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }

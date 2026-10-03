@@ -38,17 +38,18 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 
 **Roles** are resolved client-side in `src/lib/auth.tsx`: a row in `admins` makes the user an admin, a row in `candidates` makes them a candidate, otherwise they have no access. If the lookup itself fails (network or outage) the role is `'error'`, which shows a retry screen rather than "not registered". Route guards in `src/App.tsx` (`RequireCandidate` / `RequireAdmin`) redirect on status (submitted → `/submitted`; inactive or expired → blocked). The real enforcement is server-side.
 
-**Database** (`supabase/migrations/001_init.sql` then `002_answer_limits.sql`, both idempotent; 002 adds the size caps and inline-PNG check on `answers` and must be applied too):
+**Database** (`supabase/migrations/001_init.sql`, `002_answer_limits.sql`, `003_start_on_first_answer.sql`, all idempotent and applied in order; 002 adds the size caps and inline-PNG check on `answers`, 003 a trigger that stamps `started_at` on the first answer write):
 - Helper predicates `is_admin()`, `candidate_has_access()` (active and not expired) and `candidate_can_edit()` (that, plus not submitted) are used by every RLS policy.
 - `answer_key` and `marks` are admin-only. `questions` and `assessment_info` are readable only by candidates with valid access. A candidate can write their own `answers` only while `candidate_can_edit()` holds.
 - Candidates can SELECT their own `candidates` row but never write it. Timer and status columns change only through the security-definer RPCs `heartbeat()`, `pause_timer()` and `submit_assessment()`.
 
-**Active-time timer** (server-authoritative):
+**Active-time timer** (client-reported, server-validated; advisory, not tamper-proof):
 - `src/lib/useActiveTimer.ts` sends a `heartbeat` every 30 s while the tab is visible and there has been input within 5 min.
 - It calls `pause_timer` when the tab is hidden, the candidate is idle, or they use Save & exit.
 - The server adds the elapsed time only if the gap since `last_heartbeat_at` is ≤ 90 s (`_bank_active_time`). `pause_timer` sets `last_heartbeat_at` to null so the next heartbeat starts fresh.
+- A candidate calling the REST API directly can write answers without heartbeats, so `active_seconds` can only under-report. The trustworthy figure is `submitted_at - started_at` (`elapsedSeconds`, shown as "Elapsed" on `ReviewPage`): migration 003's trigger stamps `started_at` on the first answer write, so it does not depend on heartbeats.
 
-**Candidate accounts** are real Supabase Auth users. They are created or rotated only by the Edge Function `supabase/functions/admin-candidates` (Deno, service-role key, actions `create` / `reset_password` / `delete`). It checks the caller against `admins`. Expiry and enable/disable are plain admin `UPDATE`s on `candidates` from the UI.
+**Candidate accounts** are real Supabase Auth users. They are created or rotated only by the Edge Function `supabase/functions/admin-candidates` (Deno, service-role key, actions `create` / `reset_password` / `delete`). It checks the caller against `admins`. Expiry and enable/disable are plain admin `UPDATE`s on `candidates` from the UI. `reset_password` never changes `is_active` (the UI warns if the candidate is still disabled) and does not end existing sessions; only Disable blocks a signed-in candidate.
 
 **Answers**: one `answers` row per (candidate, question). It holds rich text (Tiptap JSON + HTML + plain text), `code` + `code_language` ('sql' or 'pyspark'), and `diagram_scene` (Excalidraw JSON) + `diagram_png` (a data-URL snapshot used for review and Word export).
 - `src/lib/useAutosave.ts` debounces partial patches. It upserts **one row per request** on purpose: a bulk upsert would null out the columns missing from other rows.

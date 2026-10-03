@@ -35,6 +35,7 @@ Keep a backup of `private/` somewhere safe, such as OneDrive. Another option is 
    2. `supabase/migrations/002_answer_limits.sql` (size caps on answers and the inline-PNG check on diagram snapshots; skipping it leaves those protections off)
    3. `supabase/seed/questions.sql` (generate first, see below)
    4. `supabase/seed/answer_key.sql`
+   5. `supabase/migrations/003_start_on_first_answer.sql` (server stamps the start time on the first saved answer; needed for the review page's **Elapsed** figure to be reliable)
 
    To check that the limits are active, run `select conname from pg_constraint where conrelid = 'public.answers'::regclass;`. The result should include `answers_size_limits` and `answers_diagram_png_format`.
 4. **Storage → `assessment-data` bucket** (created by the migration) → upload `private/wellnesstrack_sample_data.zip`.
@@ -85,8 +86,8 @@ npm test                     # marking unit tests (+ answer-key checks when priv
 
 1. Sign in at the portal URL with your admin account. You'll land on **Candidates**.
 2. **+ Add candidate** → enter the email, name and access expiry (defaults to 3 days). A password is generated and shown **once**, along with a ready-to-paste **invitation email**.
-3. To give a candidate access again, or to rotate the password, click **New password**. The old password stops working. If access had expired, it's extended by 3 days.
-   **Disable** blocks a candidate immediately. Click the expiry date to change it.
+3. To rotate a candidate's password, or to give them a password again after their access expired, click **New password**. The old password stops working for new sign-ins, and if access had expired it's extended by 3 days. It does **not** re-enable a disabled candidate (click **Enable** for that) and does not sign out someone who is already signed in.
+   **Disable** blocks a candidate immediately, even if they are signed in. Click the expiry date to change it.
 4. When a candidate submits, click **Mark & export**:
    - Auto-scores come from the keyword rubric. Each check shows ✓ or ✗.
    - To override a score, type a final score. Leave it blank to keep the auto score. Add comments for colleagues.
@@ -97,7 +98,9 @@ npm test                     # marking unit tests (+ answer-key checks when priv
 ### How the active-time timer works
 - While the tab is visible and the candidate has used the keyboard or mouse in the last **5 minutes**, the browser sends a heartbeat every 30 s.
 - The **server** adds the time since the previous heartbeat, but only if the gap is ≤ 90 s. When the candidate hides the tab, goes idle or clicks *Save & exit*, `pause_timer()` banks the time and stops the clock.
-- Closing the laptop or losing the network therefore never counts as active time, and candidates cannot change the timer themselves.
+- Closing the laptop or losing the network therefore never counts as active time.
+- Active time is reported by the candidate's browser and only *validated* by the server (a gap over 90 s earns nothing, so it cannot be inflated). It is not tamper-proof against someone calling the API directly, who could save answers and submit without sending heartbeats and so under-report it.
+- For a figure the candidate cannot shorten, the review page also shows **Elapsed**: the time from the server-stamped first saved answer to submission. It includes breaks, so use it as a cross-check on active time, not a replacement.
 
 ### Marking scheme (100)
 A1 10 · A2 8 · A3 7 · B1–B4 6 each · C1 10 · C2 7 · C3 7 · C4 7 · D1 10 · D2 10.
@@ -118,6 +121,7 @@ src/
 supabase/
   migrations/001_init.sql            tables, RLS, heartbeat/pause/submit RPCs, storage policies
   migrations/002_answer_limits.sql   size caps and inline-PNG check on answers
+  migrations/003_start_on_first_answer.sql   trigger: started_at is stamped by the server on the first answer write
   functions/admin-candidates/        create / reset_password / delete candidate accounts
 scripts/generate-seed.mjs            private content -> seed SQL (+ validation)
 scripts/package-sample-data.sh       CSVs -> zip for Storage
