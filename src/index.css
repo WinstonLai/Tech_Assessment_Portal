@@ -103,17 +103,14 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
 .excalidraw .App-menu_top .buttonList { flex-wrap: wrap; }
 
 /* Login page backdrop + entrance animations */
-.login-grid {
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
-  animation: login-grid-drift 20s linear infinite;
+.login-gradient {
+  background: linear-gradient(125deg, #7c3aed, #d946ef, #f43f5e, #fb923c, #06b6d4, #6366f1);
+  background-size: 300% 300%;
+  animation: login-gradient 18s ease-in-out infinite alternate;
 }
-@keyframes login-grid-drift { to { background-position: 48px 48px; } }
-.login-glow { animation: login-glow 14s ease-in-out infinite alternate; }
-@keyframes login-glow { to { transform: translate(60px, 40px) scale(1.15); } }
+@keyframes login-gradient { from { background-position: 0% 30%; } to { background-position: 100% 70%; } }
+.login-wave { animation: login-wave linear infinite; }
+@keyframes login-wave { to { transform: translateX(-50%); } }
 .login-rise { animation: login-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 @keyframes login-rise { from { opacity: 0; transform: translateY(16px); } }
 .login-cursor { animation: login-blink 1s steps(1) infinite; }
@@ -122,8 +119,6 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
 @keyframes login-float { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-28px) rotate(4deg); } }
 .login-beat { animation: login-beat 1.2s ease-in-out infinite; }
 @keyframes login-beat { 0%, 40%, 100% { transform: scale(1); } 12% { transform: scale(1.25); } 24% { transform: scale(1.05); } 32% { transform: scale(1.18); } }
-.login-ecg { stroke-dasharray: 0.12 0.88; animation: login-ecg 4s linear infinite; filter: drop-shadow(0 0 6px rgba(251, 113, 133, 0.9)); }
-@keyframes login-ecg { from { stroke-dashoffset: 0.12; } to { stroke-dashoffset: -0.88; } }
 @media (prefers-reduced-motion: reduce) {
-  .login-grid, .login-glow, .login-rise, .login-cursor, .login-float, .login-beat, .login-ecg { animation: none; }
+  .login-gradient, .login-wave, .login-rise, .login-cursor, .login-float, .login-beat { animation: none; }
 }

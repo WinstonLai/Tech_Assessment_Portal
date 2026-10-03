@@ -36,14 +36,14 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md">
         <div className="login-rise mb-6 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-2xl text-white shadow-lg shadow-indigo-500/40 ring-1 ring-white/20">📊</div>
-          <h1 className="text-xl font-bold text-white">WellnessTrack Tech Assessment</h1>
-          <p className="mt-1 text-sm text-white/70">HPB CDOO · Data Engineering Internship</p>
-          <p className="mt-3 font-mono text-xs text-sky-300 [font-variant-ligatures:none]" aria-hidden="true">
-            <span className="text-white/50">$</span> authenticate --candidate<span className="login-cursor ml-0.5 inline-block h-3 w-1.5 translate-y-0.5 bg-sky-300" />
+          <h1 className="text-xl font-bold text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.3)]">WellnessTrack Tech Assessment</h1>
+          <p className="mt-1 text-sm text-white/90 [text-shadow:0_1px_6px_rgba(0,0,0,0.3)]">HPB CDOO · Data Engineering Internship</p>
+          <p className="mt-3 font-mono text-xs text-white [font-variant-ligatures:none]" aria-hidden="true">
+            <span className="text-white/70">$</span> authenticate --candidate<span className="login-cursor ml-0.5 inline-block h-3 w-1.5 translate-y-0.5 bg-white" />
           </p>
         </div>
         <form onSubmit={submit} style={{ animationDelay: '0.15s' }}
-          className="login-rise space-y-4 rounded-xl border border-white/20 bg-surface/95 p-6 shadow-2xl shadow-indigo-950/50 backdrop-blur">
+          className="login-rise space-y-4 rounded-xl border border-white/20 bg-surface/95 p-6 shadow-2xl shadow-fuchsia-950/30 backdrop-blur">
           <div>
             <label htmlFor="email" className="mb-1 block text-sm font-medium">Email</label>
             <input id="email" type="email" autoComplete="username" required value={email}
