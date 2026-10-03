@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth';
 import { useActiveTimer } from '../../lib/useActiveTimer';
 import { useAutosave, type SaveStatus } from '../../lib/useAutosave';
 import { flushDiagramSaves } from '../../lib/diagramFlush';
+import { safeStorage } from '../../lib/safeStorage';
 import { formatDateTime, formatDuration } from '../../lib/format';
 import { isAnswered } from '../../lib/marking';
 import type { Answer, AnswerPatch, Candidate, Question } from '../../lib/types';
@@ -64,12 +65,12 @@ export default function AssessmentPage() {
     if (qid === REVIEW) return REVIEW;
     const fromRoute = questions.find((q) => q.id === qid);
     if (fromRoute) return fromRoute;
-    const last = localStorage.getItem(LAST_Q_KEY);
+    const last = safeStorage.get(LAST_Q_KEY);
     return questions.find((q) => q.id === last) ?? questions[0];
   }, [qid, questions]);
 
   useEffect(() => {
-    if (current && current !== REVIEW) localStorage.setItem(LAST_Q_KEY, current.id);
+    if (current && current !== REVIEW) safeStorage.set(LAST_Q_KEY, current.id);
   }, [current]);
 
   const update = useCallback((questionId: string, patch: AnswerPatch) => {
@@ -168,6 +169,8 @@ export default function AssessmentPage() {
 
         {/* Main */}
         <main className="min-w-0 flex-1 p-4 md:p-8">
+          <ExpiryBanner expiresAt={c.access_expires_at} onExpired={() => void refreshCandidate()} />
+
           {autosave.blocked.length > 0 && (
             <div className="mx-auto mb-4 max-w-5xl">
               <Alert>
@@ -208,6 +211,39 @@ export default function AssessmentPage() {
           </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+const EXPIRY_WARNING_MS = 15 * 60 * 1000;
+
+/**
+ * Writes are rejected once access_expires_at passes, and unsubmitted work is then locked out, so warn in the
+ * last minutes. At zero it refreshes the candidate row so the route guard shows the expired screen even when
+ * the timer is paused (no heartbeat would otherwise notice).
+ */
+function ExpiryBanner({ expiresAt, onExpired }: { expiresAt: string; onExpired: () => void }) {
+  const [now, setNow] = useState(() => Date.now());
+  const remaining = new Date(expiresAt).getTime() - now;
+  const expired = remaining <= 0;
+
+  useEffect(() => {
+    if (expired) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [expired]);
+
+  useEffect(() => {
+    if (expired) onExpired();
+  }, [expired]); // fires once when the deadline passes
+
+  if (expired || remaining > EXPIRY_WARNING_MS) return null;
+  return (
+    <div className="mx-auto mb-4 max-w-5xl">
+      <Alert kind="warning">
+        <strong>Access ends in {formatDuration(Math.ceil(remaining / 1000))}.</strong> Submit from “Review &amp; submit” before then —
+        answers cannot be saved or submitted after your access expires.
+      </Alert>
     </div>
   );
 }

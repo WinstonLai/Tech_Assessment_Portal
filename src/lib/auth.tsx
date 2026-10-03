@@ -3,7 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import type { Candidate } from './types';
 
-type Role = 'admin' | 'candidate' | 'none';
+// 'error' = the role lookup itself failed (network, outage); distinct from 'none' (account has no role).
+type Role = 'admin' | 'candidate' | 'none' | 'error';
 
 interface AuthState {
   loading: boolean;
@@ -12,6 +13,7 @@ interface AuthState {
   candidate: Candidate | null;
   setCandidate: (c: Candidate) => void;
   refreshCandidate: () => Promise<Candidate | null>;
+  retryRole: () => void;
   signOut: () => Promise<void>;
 }
 
@@ -37,14 +39,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const uid = s.user.id;
     const { data: adminRow, error: adminErr } = await supabase.from('admins').select('user_id').eq('user_id', uid).maybeSingle();
     // Only remember the user once the lookup succeeded; after a failed one, the next SIGNED_IN retries.
-    if (!adminErr) resolvedUid.current = uid;
+    if (adminErr) {
+      setRole('error');
+      setCandidate(null);
+      return;
+    }
+    resolvedUid.current = uid;
     if (adminRow) {
       setRole('admin');
       setCandidate(null);
       return;
     }
     const { data: cand, error: candErr } = await supabase.from('candidates').select('*').eq('id', uid).maybeSingle();
-    if (candErr) resolvedUid.current = null;
+    if (candErr) {
+      resolvedUid.current = null;
+      setRole('error');
+      setCandidate(null);
+      return;
+    }
     if (cand) {
       setRole('candidate');
       setCandidate(cand as Candidate);
@@ -86,12 +98,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return (data as Candidate) ?? null;
   }, [session]);
 
+  const retryRole = useCallback(() => {
+    setLoading(true);
+    void resolveRole(session).finally(() => setLoading(false));
+  }, [session, resolveRole]);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ loading, session, role, candidate, setCandidate, refreshCandidate, signOut }}>
+    <AuthContext.Provider value={{ loading, session, role, candidate, setCandidate, refreshCandidate, retryRole, signOut }}>
       {children}
     </AuthContext.Provider>
   );

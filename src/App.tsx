@@ -54,6 +54,7 @@ function HomeRedirect() {
   if (!session) return <Navigate to="/login" replace />;
   if (role === 'admin') return <Navigate to="/admin" replace />;
   if (role === 'candidate') return <Navigate to="/welcome" replace />;
+  if (role === 'error') return <RoleLookupFailed />;
   return <NoAccess message="This account is not registered for the assessment." />;
 }
 
@@ -63,6 +64,7 @@ function RequireCandidate() {
   if (loading) return <FullPageSpinner />;
   if (!session) return <Navigate to="/login" replace />;
   if (role === 'admin') return <Navigate to="/admin" replace />;
+  if (role === 'error') return <RoleLookupFailed />;
   if (role !== 'candidate' || !candidate) return <NoAccess message="This account is not registered for the assessment." />;
   if (candidate.status === 'submitted') {
     return location.pathname === '/submitted' ? <Outlet /> : <Navigate to="/submitted" replace />;
@@ -80,6 +82,23 @@ function RequireAdmin() {
   if (!session) return <Navigate to="/login" replace />;
   if (role !== 'admin') return <Navigate to="/" replace />;
   return <Outlet />;
+}
+
+/** The account lookup failed (network/outage); the account itself may be fine, so offer a retry. */
+function RoleLookupFailed() {
+  const { retryRole, signOut } = useAuth();
+  return (
+    <div className="flex min-h-screen items-center justify-center p-6">
+      <div className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h1 className="text-lg font-semibold">Could not verify your account</h1>
+        <p className="text-sm text-slate-600">We couldn't reach the server. Check your connection and try again. Your answers are not affected.</p>
+        <div className="flex gap-2">
+          <Button onClick={retryRole}>Try again</Button>
+          <Button variant="secondary" onClick={() => signOut()}>Sign out</Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function NoAccess({ message }: { message: string }) {

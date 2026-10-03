@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage, supabase } from './supabase';
 import type { AnswerPatch } from './types';
+import { safeStorage } from './safeStorage';
 import { friendlySaveError, isPermanentSaveError, splitPatch } from './saveErrors';
 
 export type SaveStatus = 'idle' | 'unsaved' | 'saving' | 'saved' | 'error';
@@ -16,19 +17,16 @@ export interface BlockedSave { questionId: string; message: string }
 
 function readPending(uid: string): Pending {
   try {
-    return JSON.parse(localStorage.getItem(storageKey(uid)) ?? '{}') as Pending;
+    return JSON.parse(safeStorage.get(storageKey(uid)) ?? '{}') as Pending;
   } catch {
-    return {};
+    return {}; // corrupt JSON
   }
 }
 
 function writePending(uid: string, p: Pending) {
-  try {
-    if (Object.keys(p).length) localStorage.setItem(storageKey(uid), JSON.stringify(p));
-    else localStorage.removeItem(storageKey(uid));
-  } catch {
-    /* storage full / private mode: server save still works */
-  }
+  // Storage full / blocked: the server save still works, so this stays best-effort.
+  if (Object.keys(p).length) safeStorage.set(storageKey(uid), JSON.stringify(p));
+  else safeStorage.remove(storageKey(uid));
 }
 
 /**

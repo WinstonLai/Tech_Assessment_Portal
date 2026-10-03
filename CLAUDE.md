@@ -36,7 +36,7 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 
 ## Architecture
 
-**Roles** are resolved client-side in `src/lib/auth.tsx`: a row in `admins` makes the user an admin, a row in `candidates` makes them a candidate, otherwise they have no access. Route guards in `src/App.tsx` (`RequireCandidate` / `RequireAdmin`) redirect on status (submitted → `/submitted`; inactive or expired → blocked). The real enforcement is server-side.
+**Roles** are resolved client-side in `src/lib/auth.tsx`: a row in `admins` makes the user an admin, a row in `candidates` makes them a candidate, otherwise they have no access. If the lookup itself fails (network or outage) the role is `'error'`, which shows a retry screen rather than "not registered". Route guards in `src/App.tsx` (`RequireCandidate` / `RequireAdmin`) redirect on status (submitted → `/submitted`; inactive or expired → blocked). The real enforcement is server-side.
 
 **Database** (`supabase/migrations/001_init.sql` then `002_answer_limits.sql`, both idempotent; 002 adds the size caps and inline-PNG check on `answers` and must be applied too):
 - Helper predicates `is_admin()`, `candidate_has_access()` (active and not expired) and `candidate_can_edit()` (that, plus not submitted) are used by every RLS policy.
