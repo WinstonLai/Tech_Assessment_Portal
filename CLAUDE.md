@@ -18,7 +18,8 @@ npm run seed:generate  # private/assessment_content.mjs -> supabase/seed/{questi
 npm run data:zip       # HPB_Interview_Materials CSVs -> private/wellnesstrack_sample_data.zip
 ```
 
-There is no linter configured. `tsconfig.json` excludes `*.test.ts` (tests use node APIs and are type-checked only by vitest).
+There is no linter configured. `tsconfig.json` excludes `*.test.ts` (they use node APIs), and vitest does not type-check, so test files are not type-checked by any script.
+Tests run in node, except `useActiveTimer.test.ts`, which opts into jsdom with a `// @vitest-environment jsdom` docblock. `exportDocx.test.ts` unzips the generated `.docx` with `jszip` and asserts on its XML. Importing `docx` under Node 26 prints a harmless `localStorage` ExperimentalWarning from the library.
 
 Deploy: pushing to `main` runs `.github/workflows/deploy.yml` (npm ci → test → build with the `VITE_SUPABASE_*` repo secrets → GitHub Pages). Live URL: https://winstonlai.github.io/Tech_Assessment_Portal/. Supabase project ref: `giqqreoohsuwrxngxdkq`.
 
@@ -33,6 +34,7 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 - The `VITE_SUPABASE_*` values are compiled into the public JS bundle. Only the anon/publishable key belongs there, never the service-role key.
 
 `scripts/generate-seed.mjs` fails if any question's rubric points don't sum to its `max_score`, if the total isn't 100, or if a regex doesn't compile.
+The generated `questions.sql` also aborts (changing nothing) if candidates have answers, or reviewers have scores or comments, for a question id that the new content drops or renames, because `answers` and `marks` cascade-delete with their question. Export those reports first.
 
 ## Architecture
 
@@ -41,19 +43,21 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 **Database** (`supabase/migrations/001_init.sql`, `002_answer_limits.sql`, `003_start_on_first_answer.sql`, all idempotent and applied in order; 002 adds the size caps and inline-PNG check on `answers`, 003 a trigger that stamps `started_at` on the first answer write):
 - Helper predicates `is_admin()`, `candidate_has_access()` (active and not expired) and `candidate_can_edit()` (that, plus not submitted) are used by every RLS policy.
 - `answer_key` and `marks` are admin-only. `questions` and `assessment_info` are readable only by candidates with valid access. A candidate can write their own `answers` only while `candidate_can_edit()` holds.
-- Candidates can SELECT their own `candidates` row but never write it. Timer and status columns change only through the security-definer RPCs `heartbeat()`, `pause_timer()` and `submit_assessment()`.
+- Candidates can SELECT their own `candidates` row but never write it. Timer and status columns change only through the security-definer RPCs `heartbeat()`, `pause_timer()` and `submit_assessment()`, plus the security-definer trigger `answers_mark_started` (migration 003), which sets `started_at` and `in_progress` on a candidate's first answer write.
 
 **Active-time timer** (client-reported, server-validated; advisory, not tamper-proof):
 - `src/lib/useActiveTimer.ts` sends a `heartbeat` every 30 s while the tab is visible and there has been input within 5 min.
-- It calls `pause_timer` when the tab is hidden, the candidate is idle, or they use Save & exit.
+- It calls `pause_timer` when the tab is hidden, the candidate is idle, or they use Save & exit. After a failed heartbeat, input events wait 5 s before trying again, so a failing endpoint is not hit on every mouse move.
 - The server adds the elapsed time only if the gap since `last_heartbeat_at` is ≤ 90 s (`_bank_active_time`). `pause_timer` sets `last_heartbeat_at` to null so the next heartbeat starts fresh.
 - A candidate calling the REST API directly can write answers without heartbeats, so `active_seconds` can only under-report. The trustworthy figure is `submitted_at - started_at` (`elapsedSeconds`, shown as "Elapsed" on `ReviewPage`): migration 003's trigger stamps `started_at` on the first answer write, so it does not depend on heartbeats.
 
-**Candidate accounts** are real Supabase Auth users. They are created or rotated only by the Edge Function `supabase/functions/admin-candidates` (Deno, service-role key, actions `create` / `reset_password` / `delete`). It checks the caller against `admins`. Expiry and enable/disable are plain admin `UPDATE`s on `candidates` from the UI. `reset_password` never changes `is_active` (the UI warns if the candidate is still disabled) and does not end existing sessions; only Disable blocks a signed-in candidate.
+**Candidate accounts** are real Supabase Auth users. They are created or rotated only by the Edge Function `supabase/functions/admin-candidates` (Deno, service-role key, actions `create` / `reset_password` / `delete`). It checks the caller against `admins`. Expiry and enable/disable are plain admin `UPDATE`s on `candidates` from the UI. `delete` only deletes existing candidates (404 otherwise) and never admins. `reset_password` never changes `is_active` (the UI warns if the candidate is still disabled) and does not end existing sessions; only Disable blocks a signed-in candidate.
 
 **Answers**: one `answers` row per (candidate, question). It holds rich text (Tiptap JSON + HTML + plain text), `code` + `code_language` ('sql' or 'pyspark'), and `diagram_scene` (Excalidraw JSON) + `diagram_png` (a data-URL snapshot used for review and Word export).
 - `src/lib/useAutosave.ts` debounces partial patches. It upserts **one row per request** on purpose: a bulk upsert would null out the columns missing from other rows.
 - Unsynced patches (and the time of each local edit) are mirrored to localStorage and re-applied on the next load, unless the server already holds a newer copy of that answer (`shouldApplyRecovered` in `src/lib/recovery.ts`); the candidate is told when that happens.
+- A save the server rejects for a reason retrying cannot fix (CHECK/size, data, RLS: `isPermanentSaveError` in `src/lib/saveErrors.ts`) is not retried. It shows a persistent "Not saved" notice, blocks submit until resolved, and the next edit to that field tries again. Diagram fields and text/code fields are saved in separate requests so an oversized diagram cannot block the question's text.
+- `DiagramEditor` has its own debounce and PNG export before it reaches autosave. `src/lib/diagramFlush.ts` lets Save & exit and submit await it (kept separate so Excalidraw stays out of the main bundle).
 - Question `answer_type` (`rich_text` | `code` | `diagram_plus_text`) drives which editors `AssessmentPage` renders. Code questions also get an optional notes rich-text box.
 
 **Marking** (`src/lib/marking.ts`) is pure and runs in the admin's browser. `ReviewPage` and the "Auto-score submitted" button on `CandidatesPage` both go through `computeAutoMarks`. A candidate with no `marks` rows is "not marked" (blank in the CSV, left out of the ranking), never 0:
@@ -64,7 +68,7 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 - The reviewer's `final_score` overrides it (null means use the auto score), and `effectiveScore` / `sectionTotals` apply that rule everywhere.
 - The test suite also checks the real answer key from `private/answer_key.generated.json` when that file exists: each model answer must score ≥ 85% and an off-topic answer ≤ 20%. The test is skipped in CI, where the file is absent.
 
-**Word export** (`src/lib/exportDocx.ts`, `docx` library, client-side) converts prompt and model-answer markdown (via `marked.lexer`) and candidate Tiptap JSON into docx. It embeds `diagram_png` and renders code in monospace. `buildSummaryReport` produces the ranked all-candidates table. The CSV summary lives in `CandidatesPage`.
+**Word export** (`src/lib/exportDocx.ts`, `docx` library, client-side) converts prompt and model-answer markdown (via `marked.lexer`) and candidate Tiptap JSON into docx. It embeds `diagram_png` and renders code in monospace. `buildSummaryReport` produces the ranked all-candidates table, with candidates that have no marks listed last as "not marked". The CSV summary lives in `CandidatesPage`; every cell goes through `csvCell` (`src/lib/csv.ts`), which prefixes text starting with `= + - @` so spreadsheets do not evaluate it.
 
 Heavy editors are lazy-loaded: `AssessmentPage`, the admin pages and `DiagramEditor` (Excalidraw, around 1 MB). `vite.config.ts` uses `base: './'` with HashRouter so the build works from any Pages sub-path, and defines `process.env.IS_PREACT` for Excalidraw.
 
@@ -73,5 +77,8 @@ Heavy editors are lazy-loaded: `AssessmentPage`, the admin pages and `DiagramEdi
 - `supabase.functions.invoke` errors carry the JSON body in `error.context`; use `errorMessage()` from `src/lib/supabase.ts` to surface it.
 - The login page maps only "Invalid login credentials" to the friendly message. Keep other errors visible, because a bad API key was once hidden behind "Incorrect email or password".
 - Supabase free projects pause after 7 days without activity.
+- CI deploys only the frontend. Migrations, the seed SQL and the Edge Function are applied by hand (SQL editor, `supabase functions deploy admin-candidates`), so a code change that depends on one of them is not live until you do that.
+- **Excalidraw unmount:** its `componentWillUnmount` swaps in an empty scene before a parent's effect cleanup runs, so `api.getSceneElements()` / `getFiles()` return nothing there. `DiagramEditor` therefore saves from the latest `onChange` snapshot, never from the imperative API. Do not reintroduce a flush that reads the API during unmount: it overwrites the candidate's diagram with an empty one.
+- Use `safeStorage` (`src/lib/safeStorage.ts`) instead of `localStorage` directly; storage access can throw (blocked site data, quota). `ErrorBoundary` wraps the app in `src/main.tsx` so a render error shows a recovery screen instead of a blank page.
 - **CSP:** `csp.ts` builds a Content-Security-Policy `<meta>` tag that is injected for `vite build` only (it would break the dev server). The Supabase origin comes from `VITE_SUPABASE_URL`. If you add anything that loads from another host (a font CDN, an embed, another API) or needs inline script/eval, add it there, or it will be blocked in production but work in `npm run dev`. The policy was exercised in a browser against the login page, Excalidraw (drawing, tables, PNG export, Mermaid import), the Tiptap editor and CodeMirror. Excalidraw loads its fonts from `esm.sh` at runtime, which is why that host is allowed.
 - **Dependency overrides:** `package.json` `overrides` pin patched `nanoid`, `lodash-es` and `sass` under Excalidraw so that `npm audit --omit=dev` is clean. Do not run `npm audit fix --force` (it downgrades Excalidraw). After bumping Excalidraw, re-check the overrides still apply (`npm ls nanoid lodash-es sass`).
