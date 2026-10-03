@@ -64,7 +64,7 @@ export default function WelcomePage() {
             <dl className="mt-4 space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-slate-500">Access until</dt><dd className="font-medium">{formatDateTime(candidate.access_expires_at)}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Active time so far</dt><dd className="font-mono font-medium">{formatDuration(candidate.active_seconds)}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">Questions</dt><dd className="font-medium">{questions.length} · 100 marks</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Questions</dt><dd className="font-medium">{questions.length} · {questions.reduce((n, q) => n + Number(q.max_score), 0)} marks</dd></div>
             </dl>
             <Button className="mt-5 w-full" onClick={() => navigate('/assessment')} disabled={!questions.length}>
               {started ? 'Resume assessment →' : 'Start assessment →'}

@@ -4,7 +4,7 @@ import { saveAs } from 'file-saver';
 import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, formatDuration } from '../../lib/format';
-import { effectiveScore, scoreAnswer, sectionTotals } from '../../lib/marking';
+import { computeAutoMarks, effectiveScore, sectionTotals } from '../../lib/marking';
 import { safePngDataUrl, sanitizeHtml } from '../../lib/markdown';
 import { buildCandidateReport } from '../../lib/exportDocx';
 import type { Answer, AnswerKey, Candidate, Mark, Question } from '../../lib/types';
@@ -31,6 +31,7 @@ export default function ReviewPage() {
   const load = useCallback(async () => {
     if (!candidateId) return;
     setLoading(true);
+    setError(null);
     const [c, q, k, a, m] = await Promise.all([
       supabase.from('candidates').select('*').eq('id', candidateId).single(),
       supabase.from('questions').select('*').order('sort_order'),
@@ -44,20 +45,10 @@ export default function ReviewPage() {
     const qs = q.data as Question[];
     const keyMap = Object.fromEntries((k.data as AnswerKey[]).map((x) => [x.question_id, x]));
     const ansMap = Object.fromEntries((a.data as Answer[]).map((x) => [x.question_id, x]));
-    const markMap: Record<string, Mark> = Object.fromEntries((m.data as Mark[]).map((x) => [x.question_id, x]));
+    const storedMarks: Record<string, Mark> = Object.fromEntries((m.data as Mark[]).map((x) => [x.question_id, x]));
 
     // (Re)compute keyword auto-scores; keep reviewer overrides and comments untouched.
-    const changed: Pick<Mark, 'candidate_id' | 'question_id' | 'auto_score' | 'rubric_hits'>[] = [];
-    for (const qq of qs) {
-      const key = keyMap[qq.id];
-      if (!key) continue;
-      const { score, hits } = scoreAnswer(ansMap[qq.id], key.rubric, Number(qq.max_score));
-      const prev = markMap[qq.id];
-      if (!prev || Number(prev.auto_score) !== score || JSON.stringify(prev.rubric_hits) !== JSON.stringify(hits)) {
-        changed.push({ candidate_id: candidateId, question_id: qq.id, auto_score: score, rubric_hits: hits });
-        markMap[qq.id] = { ...(prev ?? { final_score: null, reviewer_comment: null, reviewed_by: null, reviewed_at: null }), candidate_id: candidateId, question_id: qq.id, auto_score: score, rubric_hits: hits };
-      }
-    }
+    const { changed, marks: markMap } = computeAutoMarks(candidateId, qs, keyMap, ansMap, storedMarks);
     if (changed.length) {
       const { error: upErr } = await supabase.from('marks').upsert(changed, { onConflict: 'candidate_id,question_id' });
       if (upErr) setError(`Could not store auto-scores: ${await errorMessage(upErr)}`);
@@ -109,7 +100,9 @@ export default function ReviewPage() {
       <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-6">
         <Link to="/admin" className="text-sm text-indigo-700 hover:underline">← All candidates</Link>
         {error && <Alert>{error}</Alert>}
-        {loading || !candidate ? <Spinner /> : (
+        {loading ? <Spinner /> : !candidate ? (
+          <Button variant="secondary" onClick={load}>Try again</Button>
+        ) : (
           <>
             {/* Summary */}
             <section className="grid gap-4 lg:grid-cols-[1fr_auto]">

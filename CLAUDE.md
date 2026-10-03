@@ -55,7 +55,7 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 - Unsynced patches are mirrored to localStorage and re-applied on the next load.
 - Question `answer_type` (`rich_text` | `code` | `diagram_plus_text`) drives which editors `AssessmentPage` renders. Code questions also get an optional notes rich-text box.
 
-**Marking** (`src/lib/marking.ts`) is pure and runs in the admin's browser (`ReviewPage`):
+**Marking** (`src/lib/marking.ts`) is pure and runs in the admin's browser. `ReviewPage` and the "Auto-score submitted" button on `CandidatesPage` both go through `computeAutoMarks`. A candidate with no `marks` rows is "not marked" (blank in the CSV, left out of the ranking), never 0:
 - Each rubric item has case-insensitive regex `patterns`, `match` ('any' or 'all') and a `source`.
   - 'text' means rich text plus the diagram's text labels.
   - 'code' falls back to the notes text if the code box is empty.

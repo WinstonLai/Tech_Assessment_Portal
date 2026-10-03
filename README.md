@@ -91,7 +91,7 @@ npm test                     # marking unit tests (+ answer-key checks when priv
    - Auto-scores come from the keyword rubric. Each check shows ✓ or ✗.
    - To override a score, type a final score. Leave it blank to keep the auto score. Add comments for colleagues.
    - Click **Export to Word**. You can choose to include the keyword checks and the model answers. The report includes diagrams as images and code in a monospace font.
-5. **Summary CSV / Summary Word** ranks all candidates by total score, with a subtotal per section.
+5. **Summary CSV / Summary Word** ranks all candidates by total score, with a subtotal per section. Scores are only stored once a candidate has been auto-scored, which happens when you open their review page. Click **Auto-score submitted** first to score everyone in one go. Candidates without scores show as "not marked" and are left out of the ranking.
 6. **Reopen** unlocks a submitted assessment, for example if a candidate submitted by mistake.
 
 ### How the active-time timer works

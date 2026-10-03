@@ -1,4 +1,4 @@
-import type { Answer, DiagramScene, Question, RubricHit, RubricItem, Mark } from './types';
+import type { Answer, AnswerKey, DiagramScene, Question, RubricHit, RubricItem, Mark } from './types';
 
 type AnswerLike = Pick<Answer, 'rich_text_plain' | 'code' | 'diagram_scene'> | null | undefined;
 
@@ -49,6 +49,38 @@ export function scoreAnswer(answer: AnswerLike, rubric: RubricItem[], maxScore: 
   });
   const raw = hits.reduce((sum, h) => sum + (h.matched ? h.points : 0), 0);
   return { score: Math.min(maxScore, Math.round(raw * 10) / 10), hits };
+}
+
+export type AutoMarkRow = Pick<Mark, 'candidate_id' | 'question_id' | 'auto_score' | 'rubric_hits'>;
+
+/**
+ * Recomputes keyword auto-scores for one candidate. Returns only the rows whose score or hits changed
+ * (to upsert; reviewer overrides and comments are not part of the row, so they are untouched) plus the
+ * updated marks map. Questions without an answer-key entry are skipped.
+ */
+export function computeAutoMarks(
+  candidateId: string,
+  questions: Pick<Question, 'id' | 'max_score'>[],
+  keys: Record<string, Pick<AnswerKey, 'rubric'> | undefined>,
+  answers: Record<string, AnswerLike>,
+  marks: Record<string, Mark | undefined>,
+): { changed: AutoMarkRow[]; marks: Record<string, Mark> } {
+  const next = { ...marks } as Record<string, Mark>;
+  const changed: AutoMarkRow[] = [];
+  for (const q of questions) {
+    const key = keys[q.id];
+    if (!key) continue;
+    const { score, hits } = scoreAnswer(answers[q.id], key.rubric, Number(q.max_score));
+    const prev = marks[q.id];
+    if (!prev || Number(prev.auto_score) !== score || JSON.stringify(prev.rubric_hits) !== JSON.stringify(hits)) {
+      changed.push({ candidate_id: candidateId, question_id: q.id, auto_score: score, rubric_hits: hits });
+      next[q.id] = {
+        ...(prev ?? { final_score: null, reviewer_comment: null, reviewed_by: null, reviewed_at: null }),
+        candidate_id: candidateId, question_id: q.id, auto_score: score, rubric_hits: hits,
+      };
+    }
+  }
+  return { changed, marks: next };
 }
 
 /** Effective score for a question: reviewer override if present, else auto score. */

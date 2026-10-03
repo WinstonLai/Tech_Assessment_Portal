@@ -390,9 +390,12 @@ export interface SummaryRow {
 export async function buildSummaryReport(rows: SummaryRow[], questions: Question[], reviewer: string): Promise<Blob> {
   const sections = [...new Set(questions.map((q) => q.section))];
   const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
+  // A candidate with no marks rows has not been auto-scored or reviewed yet: show that, not a misleading 0.
   const data = rows
-    .map((r) => ({ r, t: sectionTotals(questions, r.marks) }))
-    .sort((a, b) => b.t.total - a.t.total);
+    .map((r) => ({ r, marked: Object.keys(r.marks).length > 0, t: sectionTotals(questions, r.marks) }))
+    .sort((a, b) => Number(b.marked) - Number(a.marked) || b.t.total - a.t.total);
+  const max = sectionTotals(questions, {}).max;
+  let rank = 0;
   const doc = new Document({
     creator: reviewer,
     title: 'WellnessTrack assessment — candidate summary',
@@ -404,11 +407,12 @@ export async function buildSummaryReport(rows: SummaryRow[], questions: Question
         muted(`Generated ${formatDateTime(new Date().toISOString())} by ${reviewer}`),
         new Paragraph(''),
         simpleTable([
-          ['#', 'Candidate', 'Email', 'Status', 'Active time', 'Submitted', ...sections.map((s) => `Sec ${s}`), 'Total /100'],
-          ...data.map(({ r, t }, i) => [
-            String(i + 1), r.candidate.full_name ?? '', r.candidate.email, r.candidate.status.replace('_', ' '),
+          ['#', 'Candidate', 'Email', 'Status', 'Active time', 'Submitted', ...sections.map((s) => `Sec ${s}`), `Total /${max}`],
+          ...data.map(({ r, marked, t }) => [
+            marked ? String(++rank) : '—', r.candidate.full_name ?? '', r.candidate.email, r.candidate.status.replace('_', ' '),
             formatDuration(r.candidate.active_seconds), formatDateTime(r.candidate.submitted_at),
-            ...sections.map((s) => fmt(t.sections.get(s)?.score ?? 0)), fmt(t.total),
+            ...sections.map((s) => (marked ? fmt(t.sections.get(s)?.score ?? 0) : 'not marked')),
+            marked ? fmt(t.total) : 'not marked',
           ]),
         ]),
       ],

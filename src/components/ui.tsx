@@ -27,18 +27,22 @@ export function FullPageSpinner() {
   );
 }
 
-export function Modal({ open, title, onClose, children, footer, wide }: {
-  open: boolean; title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean;
+/**
+ * `dismissible={false}` disables closing by Escape or a click on the backdrop, for dialogs that show
+ * something once (e.g. a generated password) and must only close through an explicit button.
+ */
+export function Modal({ open, title, onClose, children, footer, wide, dismissible = true }: {
+  open: boolean; title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; dismissible?: boolean;
 }) {
   useEffect(() => {
-    if (!open) return;
+    if (!open || !dismissible) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, dismissible, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={dismissible ? onClose : undefined}>
       <div
         role="dialog"
         aria-modal="true"

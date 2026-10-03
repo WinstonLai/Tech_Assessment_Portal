@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { extractDiagramText, scoreAnswer, sectionTotals } from './marking';
+import { computeAutoMarks, extractDiagramText, scoreAnswer, sectionTotals } from './marking';
 import type { Answer, Mark, Question, RubricItem } from './types';
 
 const rubric: RubricItem[] = [
@@ -45,6 +45,36 @@ describe('scoreAnswer', () => {
   it('caps at max score and ignores invalid regexes', () => {
     const bad: RubricItem[] = [{ id: 'b', label: 'b', points: 10, match: 'any', source: 'any', patterns: ['(', 'ok'] }];
     expect(scoreAnswer(ans({ code: 'ok' }), bad, 4).score).toBe(4);
+  });
+});
+
+describe('computeAutoMarks', () => {
+  const qs = [{ id: 'A1', max_score: 6 }, { id: 'A2', max_score: 4 }, { id: 'A3', max_score: 2 }];
+  const keys = { A1: { rubric }, A2: { rubric } }; // A3 has no answer key
+  const answers = { A1: ans({ code: 'row_number() over (partition by user_id order by ts desc)', rich_text_plain: 'latest' }) };
+
+  it('creates marks for every keyed question, including unanswered ones, and skips keyless ones', () => {
+    const { changed, marks } = computeAutoMarks('c1', qs, keys, answers, {});
+    expect(changed.map((r) => [r.question_id, r.auto_score])).toEqual([['A1', 6], ['A2', 0]]);
+    expect(Object.keys(marks)).toEqual(['A1', 'A2']);
+    expect(marks.A1).toMatchObject({ candidate_id: 'c1', final_score: null, reviewer_comment: null });
+  });
+
+  it('returns nothing when scores and hits are unchanged, and keeps reviewer overrides', () => {
+    const first = computeAutoMarks('c1', qs, keys, answers, {});
+    const reviewed = { ...first.marks, A1: { ...first.marks.A1, final_score: 3, reviewer_comment: 'ok' } };
+    const again = computeAutoMarks('c1', qs, keys, answers, reviewed);
+    expect(again.changed).toEqual([]);
+    expect(again.marks.A1).toMatchObject({ final_score: 3, reviewer_comment: 'ok' });
+  });
+
+  it('re-scores when the answer changes but leaves the override in place', () => {
+    const first = computeAutoMarks('c1', qs, keys, answers, {});
+    const reviewed = { ...first.marks, A1: { ...first.marks.A1, final_score: 3 } };
+    const { changed, marks } = computeAutoMarks('c1', qs, keys, { A1: ans({ code: 'select 1' }) }, reviewed);
+    expect(changed.map((r) => r.question_id)).toContain('A1');
+    expect(marks.A1.auto_score).toBe(0);
+    expect(marks.A1.final_score).toBe(3);
   });
 });
 

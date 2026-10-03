@@ -4,9 +4,9 @@ import { saveAs } from 'file-saver';
 import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, formatDuration, isExpired, toLocalInput } from '../../lib/format';
-import { sectionTotals } from '../../lib/marking';
+import { computeAutoMarks, sectionTotals } from '../../lib/marking';
 import { buildSummaryReport } from '../../lib/exportDocx';
-import type { Candidate, Mark, Question } from '../../lib/types';
+import type { AnswerKey, Candidate, Mark, Question } from '../../lib/types';
 import { Alert, Button, Modal, Spinner, StatusBadge, inputClass } from '../../components/ui';
 import AdminHeader from './AdminHeader';
 
@@ -35,6 +35,8 @@ export default function CandidatesPage() {
   const [editExpiry, setEditExpiry] = useState<Candidate | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Candidate | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [scoring, setScoring] = useState<string | null>(null); // progress text while bulk auto-scoring
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [c, m, q] = await Promise.all([
@@ -64,6 +66,46 @@ export default function CandidatesPage() {
   const scoreOf = (id: string) => {
     const rec = marksByCandidate.get(id);
     return rec ? sectionTotals(questions, rec).total : null;
+  };
+
+  const maxTotal = useMemo(() => questions.reduce((n, q) => n + Number(q.max_score), 0), [questions]);
+
+  // Marks are only written when a review page is opened, so candidates nobody has opened show "not marked"
+  // and are left out of the ranking. This scores every submitted candidate with the same code the review page uses.
+  const autoScoreSubmitted = async () => {
+    const targets = (candidates ?? []).filter((c) => c.status === 'submitted');
+    if (!targets.length) { setNotice('No submitted candidates to score.'); return; }
+    setError(null);
+    setNotice(null);
+    try {
+      setScoring('Loading answer key…');
+      const { data: keyRows, error: keyErr } = await supabase.from('answer_key').select('question_id,rubric');
+      if (keyErr) throw keyErr;
+      const keys = Object.fromEntries((keyRows as AnswerKey[]).map((k) => [k.question_id, k]));
+      let updated = 0;
+      const failed: string[] = [];
+      for (const [i, c] of targets.entries()) {
+        setScoring(`Scoring ${i + 1} of ${targets.length}…`);
+        // One candidate at a time: diagram scenes can be large.
+        const [a, m] = await Promise.all([
+          supabase.from('answers').select('question_id,rich_text_plain,code,diagram_scene').eq('candidate_id', c.id),
+          supabase.from('marks').select('*').eq('candidate_id', c.id),
+        ]);
+        if (a.error || m.error) { failed.push(c.email); continue; }
+        const answers = Object.fromEntries((a.data ?? []).map((x) => [x.question_id as string, x]));
+        const stored = Object.fromEntries(((m.data ?? []) as Mark[]).map((x) => [x.question_id, x]));
+        const { changed } = computeAutoMarks(c.id, questions, keys, answers, stored);
+        if (!changed.length) continue;
+        const { error: upErr } = await supabase.from('marks').upsert(changed, { onConflict: 'candidate_id,question_id' });
+        if (upErr) failed.push(c.email); else updated++;
+      }
+      await load();
+      setNotice(`Auto-scored ${targets.length - failed.length} submitted candidate${targets.length - failed.length === 1 ? '' : 's'} (${updated} updated).`);
+      if (failed.length) setError(`Could not score: ${failed.join(', ')}`);
+    } catch (e) {
+      setError(await errorMessage(e));
+    }
+    setScoring(null);
   };
 
   const act = async (c: Candidate, fn: () => Promise<void>) => {
@@ -105,9 +147,10 @@ export default function CandidatesPage() {
     const lines = [
       ['name', 'email', 'status', 'active_time', 'active_seconds', 'started_at', 'submitted_at', ...sections.map((s) => `section_${s}`), 'total'].join(','),
       ...rows.map(({ candidate: c, marks: m }) => {
-        const t = sectionTotals(questions, m);
+        // No marks rows = not scored yet: leave the score cells blank rather than exporting a misleading 0.
+        const t = Object.keys(m).length ? sectionTotals(questions, m) : null;
         return [c.full_name, c.email, c.status, formatDuration(c.active_seconds), c.active_seconds, c.started_at, c.submitted_at,
-          ...sections.map((s) => t.sections.get(s)?.score ?? 0), t.total].map(esc).join(',');
+          ...sections.map((s) => (t ? t.sections.get(s)?.score ?? 0 : '')), t ? t.total : ''].map(esc).join(',');
       }),
     ];
     saveAs(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }), `WellnessTrack_Candidate_Summary_${stamp}.csv`);
@@ -124,6 +167,9 @@ export default function CandidatesPage() {
           <h1 className="text-xl font-bold">Candidates</h1>
           <input className={`${inputClass} max-w-xs`} placeholder="Search name or email…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Search candidates" />
           <div className="ml-auto flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={autoScoreSubmitted} disabled={!candidates?.length || scoring !== null}>
+              {scoring ?? 'Auto-score submitted'}
+            </Button>
             <Button variant="secondary" onClick={() => exportSummary('csv')} disabled={!candidates?.length}>⬇ Summary CSV</Button>
             <Button variant="secondary" onClick={() => exportSummary('docx')} disabled={!candidates?.length}>⬇ Summary Word</Button>
             <Button onClick={() => setShowAdd(true)}>+ Add candidate</Button>
@@ -131,6 +177,7 @@ export default function CandidatesPage() {
         </div>
 
         {error && <Alert>{error}</Alert>}
+        {notice && <Alert kind="info">{notice}</Alert>}
 
         {!candidates ? <Spinner /> : (
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -172,7 +219,7 @@ export default function CandidatesPage() {
                           {formatDateTime(c.access_expires_at)}
                         </button>
                       </td>
-                      <td className="px-4 py-3 font-semibold">{score == null ? <span className="font-normal text-slate-400">not marked</span> : `${score} / 100`}</td>
+                      <td className="px-4 py-3 font-semibold">{score == null ? <span className="font-normal text-slate-400">not marked</span> : `${score} / ${maxTotal}`}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap justify-end gap-1">
                           <Link to={`/admin/candidates/${c.id}`} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
@@ -298,16 +345,21 @@ You can save and exit at any time and resume later; only your active time is rec
 Best regards`;
 
   const copy = async (text: string, what: string) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(what);
-    window.setTimeout(() => setCopied(null), 1500);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(what);
+    } catch {
+      setCopied('failed'); // clipboard blocked (permissions / insecure context): the text is selectable on screen
+    }
+    window.setTimeout(() => setCopied(null), 2500);
   };
 
   return (
-    <Modal open title={creds.isNew ? 'Candidate created' : 'New password issued'} onClose={onClose} wide
+    <Modal open title={creds.isNew ? 'Candidate created' : 'New password issued'} onClose={onClose} wide dismissible={false}
       footer={<Button onClick={onClose}>Done</Button>}>
       <div className="space-y-4">
         <Alert kind="warning">This password is shown only once. Copy it now — you can always issue a new one later.</Alert>
+        {copied === 'failed' && <Alert>Could not access the clipboard. Select the text on screen and copy it manually.</Alert>}
         <div className="grid grid-cols-[110px_1fr_auto] items-center gap-2 text-sm">
           <span className="text-slate-500">Email</span><span className="font-mono">{c.email}</span>
           <Button variant="ghost" className="!py-1 !text-xs" onClick={() => copy(c.email, 'email')}>{copied === 'email' ? 'Copied' : 'Copy'}</Button>
@@ -333,7 +385,9 @@ function ExpiryModal({ candidate, onClose, onSaved }: { candidate: Candidate | n
   useEffect(() => { if (candidate) { setValue(toLocalInput(candidate.access_expires_at)); setError(null); } }, [candidate]);
   if (!candidate) return null;
   const save = async () => {
-    const { error } = await supabase.from('candidates').update({ access_expires_at: new Date(value).toISOString() }).eq('id', candidate.id);
+    const when = new Date(value);
+    if (!value || Number.isNaN(when.getTime())) { setError('Enter a valid date and time.'); return; }
+    const { error } = await supabase.from('candidates').update({ access_expires_at: when.toISOString() }).eq('id', candidate.id);
     if (error) setError(await errorMessage(error));
     else onSaved();
   };
