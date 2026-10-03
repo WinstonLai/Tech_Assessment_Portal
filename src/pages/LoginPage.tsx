@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
-import { Alert, Button, FullPageSpinner, inputClass } from '../components/ui';
+import { Alert, Button, FullPageSpinner, ThemeToggle, inputClass } from '../components/ui';
 import LoginBackdrop from '../components/LoginBackdrop';
 
 export default function LoginPage() {
@@ -32,17 +32,18 @@ export default function LoginPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center p-6">
       <LoginBackdrop />
+      <ThemeToggle onDark className="absolute right-4 top-4" />
       <div className="relative w-full max-w-md">
         <div className="login-rise mb-6 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-2xl text-white shadow-lg shadow-indigo-500/40 ring-1 ring-white/20">📊</div>
           <h1 className="text-xl font-bold text-white">WellnessTrack Tech Assessment</h1>
-          <p className="mt-1 text-sm text-slate-300">HPB CDOO · Data Engineering Internship</p>
+          <p className="mt-1 text-sm text-white/70">HPB CDOO · Data Engineering Internship</p>
           <p className="mt-3 font-mono text-xs text-sky-300 [font-variant-ligatures:none]" aria-hidden="true">
-            <span className="text-slate-500">$</span> authenticate --candidate<span className="login-cursor ml-0.5 inline-block h-3 w-1.5 translate-y-0.5 bg-sky-300" />
+            <span className="text-white/50">$</span> authenticate --candidate<span className="login-cursor ml-0.5 inline-block h-3 w-1.5 translate-y-0.5 bg-sky-300" />
           </p>
         </div>
         <form onSubmit={submit} style={{ animationDelay: '0.15s' }}
-          className="login-rise space-y-4 rounded-xl border border-white/20 bg-white/95 p-6 shadow-2xl shadow-indigo-950/50 backdrop-blur">
+          className="login-rise space-y-4 rounded-xl border border-white/20 bg-surface/95 p-6 shadow-2xl shadow-indigo-950/50 backdrop-blur">
           <div>
             <label htmlFor="email" className="mb-1 block text-sm font-medium">Email</label>
             <input id="email" type="email" autoComplete="username" required value={email}

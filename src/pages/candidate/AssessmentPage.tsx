@@ -133,7 +133,7 @@ export default function AssessmentPage() {
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-1">
         {/* Sidebar */}
-        <nav aria-label="Questions" className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4 md:block">
+        <nav aria-label="Questions" className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-surface p-4 md:block">
           <div className="mb-3">
             <div className="flex justify-between text-xs text-slate-500">
               <span>Progress</span><span>{answeredCount}/{questions.length} answered</span>
@@ -156,7 +156,7 @@ export default function AssessmentPage() {
                       <Link
                         to={`/assessment/${q.id}`}
                         aria-current={active ? 'page' : undefined}
-                        className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${active ? 'bg-indigo-50 font-semibold text-indigo-700' : 'text-slate-700 hover:bg-slate-50'}`}
+                        className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${active ? 'bg-indigo-50 font-semibold text-indigo-700 dark:text-indigo-300' : 'text-slate-700 hover:bg-slate-50'}`}
                       >
                         <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ${done ? 'bg-emerald-500 text-white' : 'border border-slate-300'}`}>
                           {done ? '✓' : ''}
@@ -172,7 +172,7 @@ export default function AssessmentPage() {
           ))}
           <Link
             to={`/assessment/${REVIEW}`}
-            className={`mt-2 block rounded-lg border px-3 py-2 text-center text-sm font-semibold ${current === REVIEW ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-indigo-200 text-indigo-700 hover:bg-indigo-50'}`}
+            className={`mt-2 block rounded-lg border px-3 py-2 text-center text-sm font-semibold ${current === REVIEW ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-indigo-200 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50'}`}
           >
             Review & submit
           </Link>
@@ -268,7 +268,7 @@ function SaveIndicator({ status, error }: { status: SaveStatus; error: string | 
   const text: Record<SaveStatus, string> = {
     idle: 'All changes saved', saved: 'All changes saved', unsaved: 'Unsaved changes…', saving: 'Saving…', error: 'Save failed — retrying',
   };
-  const color = status === 'error' ? 'text-rose-600' : status === 'saved' || status === 'idle' ? 'text-emerald-700' : 'text-slate-500';
+  const color = status === 'error' ? 'text-rose-600 dark:text-rose-400' : status === 'saved' || status === 'idle' ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500';
   return <span className={`hidden text-xs sm:inline ${color}`} title={error ?? undefined} aria-live="polite">{text[status]}</span>;
 }
 
@@ -276,7 +276,7 @@ function QuestionView({ q, answer, update }: { q: Question; answer: Draft; updat
   return (
     <article className="mx-auto max-w-5xl space-y-5">
       <header>
-        <p className="text-sm font-medium text-indigo-700">{q.section_title}</p>
+        <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">{q.section_title}</p>
         <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-2xl font-bold">
             <span className="text-slate-400">{q.id}.</span> {q.title}
@@ -285,7 +285,7 @@ function QuestionView({ q, answer, update }: { q: Question; answer: Draft; updat
         </div>
       </header>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
         <Markdown md={q.prompt_md} />
       </div>
 
@@ -293,7 +293,7 @@ function QuestionView({ q, answer, update }: { q: Question; answer: Draft; updat
         <>
           <section aria-label="Diagram">
             <h2 className="mb-2 text-sm font-semibold text-slate-700">Diagram</h2>
-            <Suspense fallback={<div className="flex h-[560px] items-center justify-center rounded-lg border border-slate-300 bg-white"><Spinner label="Loading drawing canvas…" /></div>}>
+            <Suspense fallback={<div className="flex h-[560px] items-center justify-center rounded-lg border border-slate-300 bg-surface"><Spinner label="Loading drawing canvas…" /></div>}>
               <DiagramEditor
                 initialScene={answer.diagram_scene ?? null}
                 onChange={(scene, png) => update(q.id, { diagram_scene: scene, diagram_png: png })}
@@ -388,7 +388,7 @@ function ReviewSubmit({ questions, answers, flush, onSubmitted }: {
       ) : (
         <Alert kind="success">All questions have an answer. 🎉</Alert>
       )}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-slate-600">
             <tr><th className="px-4 py-2">Question</th><th className="px-4 py-2">Marks</th><th className="px-4 py-2">Status</th><th /></tr>
@@ -400,8 +400,8 @@ function ReviewSubmit({ questions, answers, flush, onSubmitted }: {
                 <tr key={q.id} className="border-t border-slate-100">
                   <td className="px-4 py-2"><span className="font-mono text-xs text-slate-500">{q.id}</span> {q.title}</td>
                   <td className="px-4 py-2">{q.max_score}</td>
-                  <td className="px-4 py-2">{done ? <span className="text-emerald-700">✓ Answered</span> : <span className="text-amber-700">Not answered</span>}</td>
-                  <td className="px-4 py-2 text-right"><Link className="text-indigo-700 hover:underline" to={`/assessment/${q.id}`}>Open</Link></td>
+                  <td className="px-4 py-2">{done ? <span className="text-emerald-700 dark:text-emerald-300">✓ Answered</span> : <span className="text-amber-700 dark:text-amber-300">Not answered</span>}</td>
+                  <td className="px-4 py-2 text-right"><Link className="text-indigo-700 dark:text-indigo-300 hover:underline" to={`/assessment/${q.id}`}>Open</Link></td>
                 </tr>
               );
             })}

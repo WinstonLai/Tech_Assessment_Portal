@@ -46,7 +46,7 @@ export default function WelcomePage() {
     <div className="min-h-screen">
       <CandidateHeader right={<Button variant="ghost" onClick={() => signOut()}>Sign out</Button>} />
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[1fr_320px]">
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-surface p-6 shadow-sm">
           {error && <div className="mb-4"><Alert>{error}</Alert></div>}
           {!info ? <Spinner /> : (
             <>
@@ -57,7 +57,7 @@ export default function WelcomePage() {
         </section>
 
         <aside className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
             <p className="text-sm text-slate-500">Signed in as</p>
             <p className="font-semibold">{candidate.full_name || candidate.email}</p>
             <p className="text-sm text-slate-600">{candidate.email}</p>
@@ -72,7 +72,7 @@ export default function WelcomePage() {
             <p className="mt-2 text-xs text-slate-500">The timer only runs while you are active on the assessment pages.</p>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
             <h2 className="font-semibold">Sample data</h2>
             <p className="mt-1 text-sm text-slate-600">
               Five CSV files: users, daily_activity, sleep_logs, nutrition_logs, mental_health.
@@ -83,7 +83,7 @@ export default function WelcomePage() {
           </div>
 
           {sections.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
               <h2 className="mb-2 font-semibold">Sections</h2>
               <ul className="space-y-1.5 text-sm">
                 {sections.map(([s, title]) => {

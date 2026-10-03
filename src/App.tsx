@@ -89,7 +89,7 @@ function RoleLookupFailed() {
   const { retryRole, signOut } = useAuth();
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-surface p-6 shadow-sm">
         <h1 className="text-lg font-semibold">Could not verify your account</h1>
         <p className="text-sm text-slate-600">We couldn't reach the server. Check your connection and try again. Your answers are not affected.</p>
         <div className="flex gap-2">
@@ -105,7 +105,7 @@ function NoAccess({ message }: { message: string }) {
   const { signOut } = useAuth();
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-surface p-6 shadow-sm">
         <h1 className="text-lg font-semibold">Access unavailable</h1>
         <p className="text-sm text-slate-600">{message}</p>
         <Button variant="secondary" onClick={() => signOut()}>Sign out</Button>

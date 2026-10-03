@@ -4,6 +4,7 @@ import { python } from '@codemirror/lang-python';
 import { EditorView } from '@codemirror/view';
 import { useMemo } from 'react';
 import type { CodeLanguage } from '../lib/types';
+import { useTheme } from '../lib/theme';
 
 interface Props {
   value: string;
@@ -20,13 +21,14 @@ const LANGS: { id: CodeLanguage; label: string }[] = [
 ];
 
 export default function CodeEditor({ value, language, onChange, onLanguageChange, readOnly = false, minHeight = '320px' }: Props) {
+  const { theme } = useTheme();
   const extensions = useMemo(
     () => [language === 'sql' ? sql() : python(), EditorView.lineWrapping],
     [language],
   );
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-300 bg-white focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+    <div className="overflow-hidden rounded-lg border border-slate-300 bg-surface focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-1.5">
         <div className="flex items-center gap-1" role="radiogroup" aria-label="Code language">
           {readOnly ? (
@@ -56,6 +58,7 @@ export default function CodeEditor({ value, language, onChange, onLanguageChange
         value={value}
         minHeight={minHeight}
         extensions={extensions}
+        theme={theme}
         editable={!readOnly}
         readOnly={readOnly}
         onChange={onChange}

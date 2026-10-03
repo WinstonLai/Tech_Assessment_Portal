@@ -11,6 +11,7 @@ import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import '@excalidraw/excalidraw/index.css';
 import type { DiagramScene } from '../lib/types';
 import { registerDiagramFlush, trackDiagramSave } from '../lib/diagramFlush';
+import { useTheme } from '../lib/theme';
 
 interface Props {
   initialScene: DiagramScene | null;
@@ -46,6 +47,7 @@ function safeFiles(files: DiagramScene['files']): BinaryFiles {
 }
 
 export default function DiagramEditor({ initialScene, onChange, readOnly = false, height = 560 }: Props) {
+  const { theme } = useTheme();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const lastVersion = useRef<number | null>(null);
@@ -151,8 +153,8 @@ export default function DiagramEditor({ initialScene, onChange, readOnly = false
     <div
       className={
         fullscreen
-          ? 'fixed inset-0 z-50 flex flex-col bg-white p-3'
-          : 'flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white'
+          ? 'fixed inset-0 z-50 flex flex-col bg-surface p-3'
+          : 'flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-surface'
       }
     >
       {!readOnly && (
@@ -179,6 +181,7 @@ export default function DiagramEditor({ initialScene, onChange, readOnly = false
       <div style={fullscreen ? { flex: 1 } : { height }}>
         <Excalidraw
           excalidrawAPI={setApi}
+          theme={theme}
           initialData={{
             elements: (initialScene?.elements ?? []) as never,
             files: safeFiles(initialScene?.files),

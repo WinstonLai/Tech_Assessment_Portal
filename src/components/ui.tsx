@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { renderMarkdown } from '../lib/markdown';
+import { useTheme } from '../lib/theme';
 
 export function Markdown({ md, className = '' }: { md: string; className?: string }) {
   return (
@@ -47,7 +48,7 @@ export function Modal({ open, title, onClose, children, footer, wide, dismissibl
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-white shadow-xl`}
+        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-surface shadow-xl`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="border-b border-slate-200 px-5 py-3">
@@ -63,7 +64,7 @@ export function Modal({ open, title, onClose, children, footer, wide, dismissibl
 type BtnVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 const variants: Record<BtnVariant, string> = {
   primary: 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300',
-  secondary: 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 disabled:text-slate-400',
+  secondary: 'border border-slate-300 bg-surface text-slate-800 hover:bg-slate-50 disabled:text-slate-400',
   danger: 'bg-rose-600 text-white hover:bg-rose-700 disabled:bg-rose-300',
   ghost: 'text-slate-700 hover:bg-slate-100 disabled:text-slate-400',
 };
@@ -93,7 +94,7 @@ export function StatusBadge({ status }: { status: string }) {
     not_started: 'bg-slate-100 text-slate-700',
     in_progress: 'bg-amber-100 text-amber-800',
     submitted: 'bg-emerald-100 text-emerald-800',
-    expired: 'bg-rose-100 text-rose-700',
+    expired: 'bg-rose-100 text-rose-700 dark:text-rose-300',
     inactive: 'bg-slate-200 text-slate-600',
   };
   return (
@@ -104,4 +105,32 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 export const inputClass =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100';
+  'w-full rounded-lg border border-slate-300 bg-surface px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100';
+
+/** Light/dark switch. `onDark` styles it for the login page, whose backdrop is dark in both themes. */
+export function ThemeToggle({ onDark = false, className = '' }: { onDark?: boolean; className?: string }) {
+  const { theme, toggle } = useTheme();
+  const label = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={label}
+      aria-label={label}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${
+        onDark ? 'text-white/80 hover:bg-white/10' : 'text-slate-600 hover:bg-slate-100'
+      } ${className}`}
+    >
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {theme === 'dark' ? (
+          <>
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          </>
+        ) : (
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        )}
+      </svg>
+    </button>
+  );
+}

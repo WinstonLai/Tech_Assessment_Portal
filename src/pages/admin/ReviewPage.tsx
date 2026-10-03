@@ -98,7 +98,7 @@ export default function ReviewPage() {
     <div className="min-h-screen">
       <AdminHeader />
       <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-6">
-        <Link to="/admin" className="text-sm text-indigo-700 hover:underline">← All candidates</Link>
+        <Link to="/admin" className="text-sm text-indigo-700 dark:text-indigo-300 hover:underline">← All candidates</Link>
         {error && <Alert>{error}</Alert>}
         {loading ? <Spinner /> : !candidate ? (
           <Button variant="secondary" onClick={load}>Try again</Button>
@@ -106,7 +106,7 @@ export default function ReviewPage() {
           <>
             {/* Summary */}
             <section className="grid gap-4 lg:grid-cols-[1fr_auto]">
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
                 <div className="flex flex-wrap items-center gap-3">
                   <h1 className="text-xl font-bold">{candidate.full_name || candidate.email}</h1>
                   <StatusBadge status={candidate.status} />
@@ -126,7 +126,7 @@ export default function ReviewPage() {
                   <div className="mt-4"><Alert kind="info">This candidate has not submitted yet — answers and scores may still change.</Alert></div>
                 )}
               </div>
-              <div className="min-w-[300px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="min-w-[300px] rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
                 <div className="text-sm text-slate-500">Total score</div>
                 <div className="text-4xl font-bold">{totals.total}<span className="text-lg font-medium text-slate-400"> / {totals.max}</span></div>
                 <ul className="mt-3 space-y-1 text-sm">
@@ -202,10 +202,10 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
   const empty = !answer || (!hasRich && !answer.code?.trim() && !answer.diagram_scene?.elements?.length);
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby={`q-${q.id}`}>
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-surface shadow-sm" aria-labelledby={`q-${q.id}`}>
       <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3">
         <h2 id={`q-${q.id}`} className="font-semibold"><span className="font-mono text-slate-500">{q.id}</span> · {q.title}</h2>
-        <button className="text-xs text-indigo-700 hover:underline" onClick={() => setShowPrompt((s) => !s)}>{showPrompt ? 'Hide question' : 'Show question'}</button>
+        <button className="text-xs text-indigo-700 dark:text-indigo-300 hover:underline" onClick={() => setShowPrompt((s) => !s)}>{showPrompt ? 'Hide question' : 'Show question'}</button>
         <div className="ml-auto text-sm">
           <span className="text-slate-500">Score </span>
           <span className="text-lg font-bold">{Math.round(effectiveScore(mark) * 10) / 10}</span>
@@ -229,7 +229,7 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
               ) : pngSrc ? (
                 <img src={pngSrc} alt={`${q.id} diagram`} className="max-h-[460px] w-full rounded border border-slate-200 object-contain" />
               ) : null}
-              <button className="text-xs text-indigo-700 hover:underline" onClick={() => setInteractive((v) => !v)}>
+              <button className="text-xs text-indigo-700 dark:text-indigo-300 hover:underline" onClick={() => setInteractive((v) => !v)}>
                 {interactive ? 'Show image' : 'Open interactive view (zoom / pan)'}
               </button>
             </div>
@@ -277,7 +277,7 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
                 <span className="text-sm text-slate-500">/ {max}</span>
               </div>
               {overridden && (
-                <button className="mt-1 text-xs text-indigo-700 hover:underline" onClick={async () => {
+                <button className="mt-1 text-xs text-indigo-700 dark:text-indigo-300 hover:underline" onClick={async () => {
                   if (await onSave({ final_score: null })) { setScore(''); flash('Reset to auto'); }
                 }}>Reset to auto</button>
               )}
@@ -288,10 +288,10 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
                 onChange={(e) => setComment(e.target.value)} onBlur={commitComment} placeholder="Strengths, gaps, notes for colleagues…" />
             </div>
           </div>
-          {saved && <p className="text-xs text-emerald-700" role="status">✓ {saved}</p>}
+          {saved && <p className="text-xs text-emerald-700 dark:text-emerald-300" role="status">✓ {saved}</p>}
 
           {keyEntry && (
-            <details className="rounded-lg border border-slate-200 bg-white">
+            <details className="rounded-lg border border-slate-200 bg-surface">
               <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-slate-700">Model answer</summary>
               <div className="border-t border-slate-100 px-4 py-3"><Markdown md={keyEntry.model_answer_md} className="prose-sm" /></div>
             </details>

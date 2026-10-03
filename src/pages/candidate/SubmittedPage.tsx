@@ -9,7 +9,7 @@ export default function SubmittedPage() {
     <div className="min-h-screen">
       <CandidateHeader right={<Button variant="ghost" onClick={() => signOut()}>Sign out</Button>} />
       <main className="mx-auto max-w-xl px-4 py-16">
-        <div className="rounded-xl border border-emerald-200 bg-white p-8 text-center shadow-sm">
+        <div className="rounded-xl border border-emerald-200 bg-surface p-8 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-3xl">✓</div>
           <h1 className="text-xl font-bold">Assessment submitted</h1>
           <p className="mt-2 text-slate-600">

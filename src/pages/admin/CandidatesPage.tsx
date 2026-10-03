@@ -180,7 +180,7 @@ export default function CandidatesPage() {
         {notice && <Alert kind="info">{notice}</Alert>}
 
         {!candidates ? <Spinner /> : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-surface shadow-sm">
             <table className="w-full min-w-[1100px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -214,8 +214,8 @@ export default function CandidatesPage() {
                       </td>
                       <td className="px-4 py-3 font-mono">{formatDuration(c.active_seconds)}</td>
                       <td className="px-4 py-3">{formatDateTime(c.submitted_at)}</td>
-                      <td className={`px-4 py-3 ${expired ? 'text-rose-600' : ''}`}>
-                        <button className="underline decoration-dotted hover:text-indigo-700" onClick={() => setEditExpiry(c)}>
+                      <td className={`px-4 py-3 ${expired ? 'text-rose-600 dark:text-rose-400' : ''}`}>
+                        <button className="underline decoration-dotted hover:text-indigo-700 dark:hover:text-indigo-300" onClick={() => setEditExpiry(c)}>
                           {formatDateTime(c.access_expires_at)}
                         </button>
                       </td>
@@ -232,7 +232,7 @@ export default function CandidatesPage() {
                           {c.status === 'submitted' && (
                             <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" disabled={busy} onClick={() => reopen(c)}>Reopen</Button>
                           )}
-                          <Button variant="ghost" className="!px-2.5 !py-1.5 !text-xs text-rose-700" disabled={busy} onClick={() => setConfirmDelete(c)}>Delete</Button>
+                          <Button variant="ghost" className="!px-2.5 !py-1.5 !text-xs text-rose-700 dark:text-rose-300" disabled={busy} onClick={() => setConfirmDelete(c)}>Delete</Button>
                         </div>
                       </td>
                     </tr>

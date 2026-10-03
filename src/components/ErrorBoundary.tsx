@@ -18,7 +18,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
     if (!this.state.error) return this.props.children;
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
-        <div role="alert" className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div role="alert" className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-surface p-6 shadow-sm">
           <h1 className="text-lg font-semibold">Something went wrong</h1>
           <p className="text-sm text-slate-600">
             The page hit an unexpected error. Answers that were already saved are safe, and any text not yet saved is kept

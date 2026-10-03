@@ -33,7 +33,7 @@ export default function RichTextEditor({ initialContent, onChange, editable = tr
   });
 
   return (
-    <div className="rounded-lg border border-slate-300 bg-white focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+    <div className="rounded-lg border border-slate-300 bg-surface focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
       {editable && editor && <Toolbar editor={editor} />}
       <EditorContent
         editor={editor}
@@ -57,7 +57,7 @@ function Btn({ onClick, active, disabled, title, children }: {
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={`min-w-8 rounded px-2 py-1 text-sm font-medium transition ${
-        active ? 'bg-indigo-100 text-indigo-700' : 'text-slate-700 hover:bg-slate-100'
+        active ? 'bg-indigo-100 text-indigo-700 dark:text-indigo-300' : 'text-slate-700 hover:bg-slate-100'
       } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       {children}

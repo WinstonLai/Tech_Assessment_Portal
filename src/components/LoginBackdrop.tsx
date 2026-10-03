@@ -148,7 +148,7 @@ export default function LoginBackdrop() {
           style={{ animationDuration: '13s', animationDelay: `${c.delay}s` }}>
           <span className={`text-lg ${c.beat ? 'login-beat inline-block' : ''}`}>{c.icon}</span>
           <span className="font-mono text-sm font-semibold text-white/80">{c.value}</span>
-          <span className="text-xs text-slate-400">{c.unit}</span>
+          <span className="text-xs text-white/50">{c.unit}</span>
         </div>
       ))}
     </div>
