@@ -73,3 +73,4 @@ Heavy editors are lazy-loaded: `AssessmentPage`, the admin pages and `DiagramEdi
 - `supabase.functions.invoke` errors carry the JSON body in `error.context`; use `errorMessage()` from `src/lib/supabase.ts` to surface it.
 - The login page maps only "Invalid login credentials" to the friendly message. Keep other errors visible, because a bad API key was once hidden behind "Incorrect email or password".
 - Supabase free projects pause after 7 days without activity.
+- **Dependency overrides:** `package.json` `overrides` pin patched `nanoid`, `lodash-es` and `sass` under Excalidraw so that `npm audit --omit=dev` is clean. Do not run `npm audit fix --force` (it downgrades Excalidraw). After bumping Excalidraw, re-check the overrides still apply (`npm ls nanoid lodash-es sass`).
