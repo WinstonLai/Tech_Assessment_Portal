@@ -7,8 +7,10 @@ import {
   getSceneVersion,
 } from '@excalidraw/excalidraw';
 import type { ExcalidrawImperativeAPI, BinaryFiles } from '@excalidraw/excalidraw/types';
+import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import '@excalidraw/excalidraw/index.css';
 import type { DiagramScene } from '../lib/types';
+import { registerDiagramFlush, trackDiagramSave } from '../lib/diagramFlush';
 
 interface Props {
   initialScene: DiagramScene | null;
@@ -50,50 +52,63 @@ export default function DiagramEditor({ initialScene, onChange, readOnly = false
   const timer = useRef<number | undefined>(undefined);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  // Latest scene seen in onChange. emit() must read this, not the imperative API: on unmount Excalidraw
+  // swaps in an empty Scene (and files = {}) *before* our effect cleanup runs, so querying the API there
+  // would save an empty diagram over the candidate's real one.
+  const latest = useRef<{ elements: readonly ExcalidrawElement[]; files: BinaryFiles } | null>(null);
 
-  const emit = useCallback(async () => {
-    if (!api) return;
-    const elements = api.getSceneElements();
-    const files = api.getFiles();
-    const scene: DiagramScene = {
-      elements: elements as unknown as Record<string, unknown>[],
-      appState: { viewBackgroundColor: '#ffffff' },
-      files: files as unknown as Record<string, unknown>,
-    };
-    let png: string | null = null;
-    if (elements.length > 0) {
-      try {
-        const blob = await exportToBlob({
-          elements,
-          files,
-          appState: { exportBackground: true, viewBackgroundColor: '#ffffff' },
-          mimeType: 'image/png',
-          exportPadding: 24,
-          maxWidthOrHeight: 1800,
-        });
-        png = await blobToDataUrl(blob);
-      } catch {
-        png = null;
+  const emit = useCallback((): Promise<void> => {
+    const snap = latest.current;
+    if (!snap) return Promise.resolve();
+    const elements = snap.elements.filter((el) => !el.isDeleted);
+    const files = snap.files;
+    return trackDiagramSave((async () => {
+      const scene: DiagramScene = {
+        elements: elements as unknown as Record<string, unknown>[],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: files as unknown as Record<string, unknown>,
+      };
+      let png: string | null = null;
+      if (elements.length > 0) {
+        try {
+          const blob = await exportToBlob({
+            elements,
+            files,
+            appState: { exportBackground: true, viewBackgroundColor: '#ffffff' },
+            mimeType: 'image/png',
+            exportPadding: 24,
+            maxWidthOrHeight: 1800,
+          });
+          png = await blobToDataUrl(blob);
+        } catch {
+          png = null;
+        }
       }
-    }
-    onChangeRef.current?.(scene, png);
-  }, [api]);
-
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-
-  // Flush pending change when unmounting (e.g. switching question).
-  const emitRef = useRef(emit);
-  emitRef.current = emit;
-  useEffect(() => () => {
-    if (timer.current) {
-      window.clearTimeout(timer.current);
-      void emitRef.current();
-    }
+      onChangeRef.current?.(scene, png);
+    })());
   }, []);
 
-  const handleChange = (elements: readonly unknown[]) => {
+  // Emit a pending debounced change now (unmount, Save & exit, submit).
+  const flushPending = useCallback(async () => {
+    if (timer.current === undefined) return;
+    window.clearTimeout(timer.current);
+    timer.current = undefined;
+    await emit();
+  }, [emit]);
+
+  useEffect(() => {
     if (readOnly) return;
-    const version = getSceneVersion(elements as Parameters<typeof getSceneVersion>[0]);
+    registerDiagramFlush(flushPending);
+    return () => {
+      registerDiagramFlush(null);
+      void flushPending(); // e.g. switching question within the debounce window
+    };
+  }, [flushPending, readOnly]);
+
+  const handleChange = (elements: readonly ExcalidrawElement[], _appState: unknown, files: BinaryFiles) => {
+    if (readOnly) return;
+    latest.current = { elements, files };
+    const version = getSceneVersion(elements);
     if (lastVersion.current === null) {
       lastVersion.current = version; // initial render
       return;

@@ -45,6 +45,15 @@ const qSql = [
       '  on conflict (id) do update set section = excluded.section, section_title = excluded.section_title, sort_order = excluded.sort_order,\n' +
       '  title = excluded.title, prompt_md = excluded.prompt_md, answer_type = excluded.answer_type, max_score = excluded.max_score;',
   ),
+  // answers/marks reference questions with ON DELETE CASCADE, so dropping or renaming a question id would
+  // silently delete every candidate's answers and marks for it. Abort (the whole transaction rolls back) instead.
+  'do $$ begin',
+  `  if exists (select 1 from public.answers where question_id not in (${questions.map((q) => `'${q.id}'`).join(', ')}))`,
+  `     or exists (select 1 from public.marks where question_id not in (${questions.map((q) => `'${q.id}'`).join(', ')})`,
+  '                and (final_score is not null or reviewer_comment is not null)) then',
+  "    raise exception 'Seed aborted: answers or reviewer marks exist for question ids missing from this content. Export or migrate them first.';",
+  '  end if;',
+  'end $$;',
   `delete from public.questions where id not in (${questions.map((q) => `'${q.id}'`).join(', ')});`,
   'commit;',
   '',

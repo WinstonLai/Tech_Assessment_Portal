@@ -38,7 +38,7 @@ The repo is **public** because free GitHub Pages requires it. Assessment content
 
 **Roles** are resolved client-side in `src/lib/auth.tsx`: a row in `admins` makes the user an admin, a row in `candidates` makes them a candidate, otherwise they have no access. Route guards in `src/App.tsx` (`RequireCandidate` / `RequireAdmin`) redirect on status (submitted → `/submitted`; inactive or expired → blocked). The real enforcement is server-side.
 
-**Database** (`supabase/migrations/001_init.sql`, idempotent):
+**Database** (`supabase/migrations/001_init.sql` then `002_answer_limits.sql`, both idempotent; 002 adds the size caps and inline-PNG check on `answers` and must be applied too):
 - Helper predicates `is_admin()`, `candidate_has_access()` (active and not expired) and `candidate_can_edit()` (that, plus not submitted) are used by every RLS policy.
 - `answer_key` and `marks` are admin-only. `questions` and `assessment_info` are readable only by candidates with valid access. A candidate can write their own `answers` only while `candidate_can_edit()` holds.
 - Candidates can SELECT their own `candidates` row but never write it. Timer and status columns change only through the security-definer RPCs `heartbeat()`, `pause_timer()` and `submit_assessment()`.

@@ -4,6 +4,7 @@ import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useActiveTimer } from '../../lib/useActiveTimer';
 import { useAutosave, type SaveStatus } from '../../lib/useAutosave';
+import { flushDiagramSaves } from '../../lib/diagramFlush';
 import { formatDateTime, formatDuration } from '../../lib/format';
 import { isAnswered } from '../../lib/marking';
 import type { Answer, AnswerPatch, Candidate, Question } from '../../lib/types';
@@ -76,9 +77,15 @@ export default function AssessmentPage() {
     autosave.queue(questionId, patch);
   }, [autosave]);
 
+  // The diagram editor debounces and exports a PNG before it reaches autosave; wait for that first.
+  const flushAll = useCallback(async () => {
+    await flushDiagramSaves();
+    return autosave.flush();
+  }, [autosave]);
+
   const saveAndExit = async () => {
     setExiting(true);
-    await autosave.flush();
+    await flushAll();
     await timer.pause();
     await signOut();
   };
@@ -161,6 +168,16 @@ export default function AssessmentPage() {
 
         {/* Main */}
         <main className="min-w-0 flex-1 p-4 md:p-8">
+          {autosave.blocked.length > 0 && (
+            <div className="mx-auto mb-4 max-w-5xl">
+              <Alert>
+                <strong>Not saved:</strong>{' '}
+                {autosave.blocked.map((b) => `${b.questionId} — ${b.message}`).join(' · ')}
+                {' '}Your work on {autosave.blocked.length > 1 ? 'these questions' : 'this question'} is not stored yet and you cannot submit until it is.
+              </Alert>
+            </div>
+          )}
+
           {/* Mobile question picker */}
           <select
             className="mb-4 w-full rounded-lg border border-slate-300 p-2 text-sm md:hidden"
@@ -176,7 +193,7 @@ export default function AssessmentPage() {
             <ReviewSubmit
               questions={questions}
               answers={answers}
-              flush={autosave.flush}
+              flush={flushAll}
               onSubmitted={(cand) => setCandidate(cand)}
             />
           ) : (
@@ -296,7 +313,7 @@ function ReviewSubmit({ questions, answers, flush, onSubmitted }: {
     const saved = await flush();
     if (!saved) {
       setBusy(false);
-      setError('Some answers could not be saved. Check your connection and try again.');
+      setError('Some answers could not be saved. Check the red notice at the top of the page and your connection, then try again.');
       return;
     }
     const { data, error } = await supabase.rpc('submit_assessment');

@@ -32,8 +32,11 @@ Keep a backup of `private/` somewhere safe, such as OneDrive. Another option is 
 2. **Authentication → Sign In / Providers → Email**: keep Email enabled. Turn **off** “Allow new users to sign up” and turn **off** “Confirm email”. Candidates are created only by the admin function.
 3. **SQL Editor** → run, in order:
    1. `supabase/migrations/001_init.sql`
-   2. `supabase/seed/questions.sql` (generate first, see below)
-   3. `supabase/seed/answer_key.sql`
+   2. `supabase/migrations/002_answer_limits.sql` (size caps on answers and the inline-PNG check on diagram snapshots; skipping it leaves those protections off)
+   3. `supabase/seed/questions.sql` (generate first, see below)
+   4. `supabase/seed/answer_key.sql`
+
+   To check that the limits are active, run `select conname from pg_constraint where conrelid = 'public.answers'::regclass;`. The result should include `answers_size_limits` and `answers_diagram_png_format`.
 4. **Storage → `assessment-data` bucket** (created by the migration) → upload `private/wellnesstrack_sample_data.zip`.
 
 Generate the seed SQL and the data zip locally:
@@ -98,7 +101,7 @@ npm test                     # marking unit tests (+ answer-key checks when priv
 
 ### Marking scheme (100)
 A1 10 · A2 8 · A3 7 · B1–B4 6 each · C1 10 · C2 7 · C3 7 · C4 7 · D1 10 · D2 10.
-To change weights, rubric items or wording, edit `private/assessment_content.mjs`. Then run `npm run seed:generate` and re-run both seed files in the SQL editor. Re-running is safe: rows are upserted. Then open any review page and click **Recalculate auto-scores**.
+To change weights, rubric items or wording, edit `private/assessment_content.mjs`. Then run `npm run seed:generate` and re-run both seed files in the SQL editor. Re-running is safe: rows are upserted. The questions seed aborts, changing nothing, if candidates already have answers or reviewer marks for a question id that the new content drops or renames, because deleting that question would cascade-delete them. Export those reports first. Then open any review page and click **Recalculate auto-scores**.
 
 The keyword auto-score is a **suggestion**. It checks for the key techniques (e.g. `ROW_NUMBER … PARTITION BY user_id`, `broadcast`, `stack(`). It cannot judge whether a candidate's reasoning is correct, so always review before you share the report.
 
@@ -114,6 +117,7 @@ src/
   lib/               supabase, auth, useActiveTimer, useAutosave, marking, exportDocx, markdown, format
 supabase/
   migrations/001_init.sql            tables, RLS, heartbeat/pause/submit RPCs, storage policies
+  migrations/002_answer_limits.sql   size caps and inline-PNG check on answers
   functions/admin-candidates/        create / reset_password / delete candidate accounts
 scripts/generate-seed.mjs            private content -> seed SQL (+ validation)
 scripts/package-sample-data.sh       CSVs -> zip for Storage
