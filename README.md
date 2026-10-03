@@ -36,6 +36,7 @@ Keep a backup of `private/` somewhere safe, such as OneDrive. Another option is 
    3. `supabase/seed/questions.sql` (generate first, see below)
    4. `supabase/seed/answer_key.sql`
    5. `supabase/migrations/003_start_on_first_answer.sql` (server stamps the start time on the first saved answer; needed for the review page's **Elapsed** figure to be reliable)
+   6. `supabase/migrations/004_server_updated_at.sql` (server stamps `answers.updated_at`; **apply this before deploying the frontend that stops sending it**, otherwise edits to an existing answer keep their old timestamp)
 
    To check that the limits are active, run `select conname from pg_constraint where conrelid = 'public.answers'::regclass;`. The result should include `answers_size_limits` and `answers_diagram_png_format`.
 4. **Storage → `assessment-data` bucket** (created by the migration) → upload `private/wellnesstrack_sample_data.zip`.
@@ -46,6 +47,12 @@ npm install
 npm run seed:generate   # validates rubric totals (=100) and writes supabase/seed/*.sql
 npm run data:zip        # writes private/wellnesstrack_sample_data.zip from HPB_Interview_Materials/
 ```
+
+#### Hardening checklist (Supabase dashboard, no code)
+- Confirm **Allow new users to sign up** is really off: the anon key is public, so with sign-up on anyone can create an account and obtain a signed-in token.
+- **Authentication → Attack Protection**: enable leaked-password protection and review the rate limits.
+- Enable **TOTP multi-factor authentication** for the admin accounts (they can read every candidate's data and the answer key).
+- After a hiring decision, delete candidates you no longer need (**Delete** on the candidates page) so personal data is not kept longer than necessary.
 
 ### 2. Admin account(s)
 1. **Authentication → Users → Add user** → your email plus a strong password (tick *Auto confirm*).
@@ -128,6 +135,7 @@ supabase/
   migrations/001_init.sql            tables, RLS, heartbeat/pause/submit RPCs, storage policies
   migrations/002_answer_limits.sql   size caps and inline-PNG check on answers
   migrations/003_start_on_first_answer.sql   trigger: started_at is stamped by the server on the first answer write
+  migrations/004_server_updated_at.sql       trigger: answers.updated_at is stamped by the server
   functions/admin-candidates/        create / reset_password / delete candidate accounts
 scripts/generate-seed.mjs            private content -> seed SQL (+ validation)
 scripts/package-sample-data.sh       CSVs -> zip for Storage

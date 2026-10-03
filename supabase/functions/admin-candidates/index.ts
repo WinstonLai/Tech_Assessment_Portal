@@ -18,6 +18,8 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Unambiguous characters (no 0/O, 1/l/I) so passwords are easy to read out in an email.
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
 function generatePassword(length = 12): string {
@@ -101,6 +103,7 @@ Deno.serve(async (req) => {
 
       case 'reset_password': {
         const id = String(body.candidate_id ?? '');
+        if (!UUID.test(id)) return json({ error: 'Invalid candidate id' }, 400);
         // Only rotate passwords of existing candidates; otherwise an admin's (or any other auth user's)
         // password could be changed here, silently locking that account out.
         const { data: existing, error: lookupErr } = await admin.from('candidates').select('id').eq('id', id).maybeSingle();
@@ -133,6 +136,7 @@ Deno.serve(async (req) => {
 
       case 'delete': {
         const id = String(body.candidate_id ?? '');
+        if (!UUID.test(id)) return json({ error: 'Invalid candidate id' }, 400);
         // Only delete existing candidates (as reset_password does); otherwise this would delete any other auth
         // user that is not an admin.
         const { data: existing, error: lookupErr } = await admin.from('candidates').select('id').eq('id', id).maybeSingle();

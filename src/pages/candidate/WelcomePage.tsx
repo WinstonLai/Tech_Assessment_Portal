@@ -69,7 +69,7 @@ export default function WelcomePage() {
             <Button className="mt-5 w-full" onClick={() => navigate('/assessment')} disabled={!questions.length}>
               {started ? 'Resume assessment →' : 'Start assessment →'}
             </Button>
-            <p className="mt-2 text-xs text-slate-500">The timer only runs while you are active on the assessment pages.</p>
+            <p className="mt-2 text-xs text-slate-500">The timer shown counts only the time you are active on the assessment pages. The total time between your first answer and your submission is also recorded.</p>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">

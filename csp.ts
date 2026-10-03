@@ -9,7 +9,7 @@ import { loadEnv, type Plugin } from 'vite';
  *  - script-src 'self' 'wasm-unsafe-eval': our bundle only (no inline scripts, no eval). Excalidraw's image
  *    resizing (pica) instantiates WebAssembly.
  *  - connect-src: the configured Supabase project (not a wildcard, which would let injected code talk to an
- *    attacker's own project) and esm.sh, where Excalidraw loads its fonts from at runtime.
+ *    attacker's own project). Excalidraw's fonts are copied into the build (excalidrawFonts.ts), so no font CDN.
  *  - worker-src blob: data:: Excalidraw and its libraries start workers from blob:/data: URLs.
  *  - style-src 'unsafe-inline': React style props and CodeMirror/Excalidraw inject styles at runtime.
  *  - img-src data: blob:: diagram snapshots and pasted images are data URLs; nothing remote is fetched.
@@ -27,8 +27,8 @@ export function buildCsp(supabaseUrl?: string): string {
     "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    "font-src 'self' data: https://esm.sh",
-    `connect-src 'self' ${supabase} https://esm.sh`,
+    "font-src 'self' data:",
+    `connect-src 'self' ${supabase}`,
     "worker-src 'self' blob: data:",
     "frame-src 'none'",
     "object-src 'none'",

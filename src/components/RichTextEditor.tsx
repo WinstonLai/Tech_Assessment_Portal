@@ -1,7 +1,6 @@
 import { useEditor, EditorContent, type Editor, type JSONContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import { TableKit } from '@tiptap/extension-table';
 import { Placeholder } from '@tiptap/extensions';
+import { answerExtensions } from '../lib/tiptapExtensions';
 
 export interface RichTextValue {
   json: JSONContent;
@@ -20,8 +19,7 @@ interface Props {
 export default function RichTextEditor({ initialContent, onChange, editable = true, placeholder, minHeight = 220 }: Props) {
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ heading: { levels: [2, 3] }, link: { openOnClick: false } }),
-      TableKit.configure({ table: { resizable: false } }),
+      ...answerExtensions,
       Placeholder.configure({ placeholder: placeholder ?? 'Type your answer here…' }),
     ],
     content: initialContent ?? '',

@@ -4,8 +4,10 @@ import { saveAs } from 'file-saver';
 import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { elapsedSeconds, formatDateTime, formatDuration } from '../../lib/format';
-import { computeAutoMarks, effectiveScore, sectionTotals } from '../../lib/marking';
-import { safePngDataUrl, sanitizeHtml } from '../../lib/markdown';
+import { computeAutoMarks, effectiveScore, richTextToPlain, sectionTotals } from '../../lib/marking';
+import { safePngDataUrl } from '../../lib/markdown';
+import { renderAnswerHtml } from '../../lib/answerHtml';
+import { renderSceneToPng } from '../../lib/diagramSnapshot';
 import { buildCandidateReport } from '../../lib/exportDocx';
 import type { Answer, AnswerKey, Candidate, Mark, Question } from '../../lib/types';
 import { Alert, Button, Markdown, Spinner, StatusBadge, inputClass } from '../../components/ui';
@@ -27,6 +29,9 @@ export default function ReviewPage() {
   const [includeModel, setIncludeModel] = useState(false);
   const [includeRubric, setIncludeRubric] = useState(true);
   const [exporting, setExporting] = useState(false);
+  // Diagram images rendered here from each answer's scene. The candidate's stored diagram_png is written by their
+  // browser independently of the scene, so it is only a fallback. undefined = rendering, null = could not render.
+  const [snapshots, setSnapshots] = useState<Record<string, string | null | undefined>>({});
 
   const load = useCallback(async () => {
     if (!candidateId) return;
@@ -66,6 +71,32 @@ export default function ReviewPage() {
 
   const totals = useMemo(() => sectionTotals(questions, marks), [questions, marks]);
 
+  const diagramIds = useMemo(
+    () => Object.values(answers).filter((a) => a.diagram_scene?.elements?.length).map((a) => a.question_id),
+    [answers],
+  );
+
+  useEffect(() => {
+    setSnapshots({});
+    let cancelled = false;
+    (async () => {
+      for (const id of diagramIds) {
+        const png = await renderSceneToPng(answers[id].diagram_scene!);
+        if (cancelled) return;
+        setSnapshots((prev) => ({ ...prev, [id]: png }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [diagramIds, answers]);
+
+  const diagramsReady = diagramIds.every((id) => snapshots[id] !== undefined);
+
+  // What the Word export embeds: the re-rendered diagram, else the stored one only if the scene has content.
+  const exportAnswers = useMemo(() => Object.fromEntries(Object.entries(answers).map(([id, a]) => [id, {
+    ...a,
+    diagram_png: a.diagram_scene?.elements?.length ? (snapshots[id] ?? a.diagram_png) : null,
+  }])), [answers, snapshots]);
+
   const saveMark = async (questionId: string, patch: Partial<Pick<Mark, 'final_score' | 'reviewer_comment'>>) => {
     const row = {
       candidate_id: candidateId!, question_id: questionId, ...patch,
@@ -82,7 +113,7 @@ export default function ReviewPage() {
     setExporting(true);
     try {
       const blob = await buildCandidateReport({
-        candidate, questions, answers, marks, keys,
+        candidate, questions, answers: exportAnswers, marks, keys,
         includeModelAnswers: includeModel, includeRubric,
         reviewer: session?.user.email ?? 'admin',
       });
@@ -128,7 +159,7 @@ export default function ReviewPage() {
               </div>
               <div className="min-w-[300px] rounded-xl border border-slate-200 bg-surface p-5 shadow-sm">
                 <div className="text-sm text-slate-500">Total score</div>
-                <div className="text-4xl font-bold">{totals.total}<span className="text-lg font-medium text-slate-400"> / {totals.max}</span></div>
+                <div className="text-4xl font-bold">{totals.total}<span className="text-lg font-medium text-slate-500"> / {totals.max}</span></div>
                 <ul className="mt-3 space-y-1 text-sm">
                   {[...totals.sections.entries()].map(([s, v]) => (
                     <li key={s} className="flex justify-between gap-4">
@@ -140,7 +171,7 @@ export default function ReviewPage() {
                 <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3 text-sm">
                   <label className="flex items-center gap-2"><input type="checkbox" checked={includeRubric} onChange={(e) => setIncludeRubric(e.target.checked)} /> Include keyword checks</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={includeModel} onChange={(e) => setIncludeModel(e.target.checked)} /> Include model answers</label>
-                  <Button className="mt-2 w-full" onClick={exportWord} disabled={exporting}>{exporting ? 'Building…' : '⬇ Export to Word'}</Button>
+                  <Button className="mt-2 w-full" onClick={exportWord} disabled={exporting || !diagramsReady}>{exporting ? 'Building…' : !diagramsReady ? 'Rendering diagrams…' : '⬇ Export to Word'}</Button>
                   <Button variant="ghost" className="w-full" onClick={load}>↻ Recalculate auto-scores</Button>
                 </div>
               </div>
@@ -152,6 +183,7 @@ export default function ReviewPage() {
                 key={q.id}
                 q={q}
                 answer={answers[q.id]}
+                snapshot={snapshots[q.id]}
                 keyEntry={keys[q.id]}
                 mark={marks[q.id]}
                 onSave={(patch) => saveMark(q.id, patch)}
@@ -164,9 +196,10 @@ export default function ReviewPage() {
   );
 }
 
-function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
+function QuestionReview({ q, answer, snapshot, keyEntry, mark, onSave }: {
   q: Question;
   answer: Answer | undefined;
+  snapshot: string | null | undefined;
   keyEntry: AnswerKey | undefined;
   mark: Mark | undefined;
   onSave: (patch: Partial<Pick<Mark, 'final_score' | 'reviewer_comment'>>) => Promise<boolean>;
@@ -174,6 +207,7 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
   const [score, setScore] = useState(mark?.final_score != null ? String(mark.final_score) : '');
   const [comment, setComment] = useState(mark?.reviewer_comment ?? '');
   const [saved, setSaved] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState<string | null>(null); // shown next to the fields: the page-level alert is far away
   const [showPrompt, setShowPrompt] = useState(false);
   const [interactive, setInteractive] = useState(false);
   const max = Number(q.max_score);
@@ -188,17 +222,22 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
     const n = trimmed === '' ? null : Math.min(max, Math.max(0, Number(trimmed)));
     if (n !== null && Number.isNaN(n)) return;
     if (n === (mark?.final_score ?? null)) return;
-    if (await onSave({ final_score: n })) { setScore(n == null ? '' : String(n)); flash('Score saved'); }
+    if (await onSave({ final_score: n })) { setScore(n == null ? '' : String(n)); setSaveFailed(null); flash('Score saved'); }
+    else setSaveFailed('The score was not saved.');
   };
 
   const commitComment = async () => {
     if ((mark?.reviewer_comment ?? '') === comment) return;
-    if (await onSave({ reviewer_comment: comment || null })) flash('Comment saved');
+    if (await onSave({ reviewer_comment: comment || null })) { setSaveFailed(null); flash('Comment saved'); }
+    else setSaveFailed('The comment was not saved.');
   };
 
   // Regex over a multi-MB base64 string: compute once, not on every keystroke in the score/comment inputs.
-  const pngSrc = useMemo(() => safePngDataUrl(answer?.diagram_png), [answer?.diagram_png]);
-  const hasRich = Boolean(answer?.rich_text_plain?.trim());
+  const storedPng = useMemo(() => safePngDataUrl(answer?.diagram_png), [answer?.diagram_png]);
+  // Rendered from the document, not from the stored rich_text_html (candidate-written, may differ from what is scored).
+  const richHtml = useMemo(() => renderAnswerHtml(answer?.rich_text_json), [answer?.rich_text_json]);
+  const richPlain = useMemo(() => richTextToPlain(answer?.rich_text_json, 20_000), [answer?.rich_text_json]);
+  const hasRich = Boolean(richPlain.trim());
   const empty = !answer || (!hasRich && !answer.code?.trim() && !answer.diagram_scene?.elements?.length);
 
   return (
@@ -219,16 +258,25 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
         {/* Candidate answer */}
         <div className="min-w-0 space-y-3 p-5 lg:border-r lg:border-slate-100">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Candidate answer</h3>
-          {empty && <p className="text-sm italic text-slate-400">No answer provided.</p>}
+          {empty && <p className="text-sm italic text-slate-500">No answer provided.</p>}
           {answer?.diagram_scene?.elements?.length ? (
             <div className="space-y-2">
               {interactive ? (
                 <Suspense fallback={<Spinner />}>
                   <DiagramEditor initialScene={answer.diagram_scene} readOnly height={460} />
                 </Suspense>
-              ) : pngSrc ? (
-                <img src={pngSrc} alt={`${q.id} diagram`} className="max-h-[460px] w-full rounded border border-slate-200 object-contain" />
-              ) : null}
+              ) : snapshot ? (
+                <img src={snapshot} alt={`${q.id} diagram`} className="max-h-[460px] w-full rounded border border-slate-200 object-contain" />
+              ) : snapshot === undefined ? (
+                <Spinner label="Rendering diagram…" />
+              ) : storedPng ? (
+                <>
+                  <Alert kind="warning">Could not redraw this diagram from its data. Showing the image saved by the candidate's browser, which is unverified. Open the interactive view to check it.</Alert>
+                  <img src={storedPng} alt={`${q.id} diagram (unverified)`} className="max-h-[460px] w-full rounded border border-slate-200 object-contain" />
+                </>
+              ) : (
+                <Alert kind="warning">This diagram could not be rendered. Open the interactive view.</Alert>
+              )}
               <button className="text-xs text-indigo-700 dark:text-indigo-300 hover:underline" onClick={() => setInteractive((v) => !v)}>
                 {interactive ? 'Show image' : 'Open interactive view (zoom / pan)'}
               </button>
@@ -238,11 +286,15 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
           {hasRich && (
             <div>
               {q.answer_type !== 'rich_text' && <div className="mb-1 text-xs font-medium text-slate-500">{q.answer_type === 'code' ? 'Notes' : 'Explanation'}</div>}
-              <div className="answer-html prose prose-sm prose-slate max-w-none rounded-lg border border-slate-200 p-4"
-                dangerouslySetInnerHTML={{ __html: sanitizeHtml(answer!.rich_text_html ?? '') }} />
+              {richHtml !== null ? (
+                <div className="answer-html prose prose-sm prose-slate max-w-none rounded-lg border border-slate-200 p-4"
+                  dangerouslySetInnerHTML={{ __html: richHtml }} />
+              ) : (
+                <div className="whitespace-pre-wrap rounded-lg border border-slate-200 p-4 text-sm">{richPlain}</div>
+              )}
             </div>
           )}
-          {answer?.updated_at && <p className="text-xs text-slate-400">Last edited {formatDateTime(answer.updated_at)}</p>}
+          {answer?.updated_at && <p className="text-xs text-slate-500">Last edited {formatDateTime(answer.updated_at)}</p>}
         </div>
 
         {/* Marking + model answer */}
@@ -289,6 +341,12 @@ function QuestionReview({ q, answer, keyEntry, mark, onSave }: {
             </div>
           </div>
           {saved && <p className="text-xs text-emerald-700 dark:text-emerald-300" role="status">✓ {saved}</p>}
+          {saveFailed && (
+            <p className="text-xs font-medium text-rose-700 dark:text-rose-300" role="alert">
+              ✗ {saveFailed} Your input is still here.{' '}
+              <button className="underline" onClick={() => { void commitScore(); void commitComment(); }}>Retry</button>
+            </p>
+          )}
 
           {keyEntry && (
             <details className="rounded-lg border border-slate-200 bg-surface">

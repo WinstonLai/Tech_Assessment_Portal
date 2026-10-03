@@ -1,7 +1,7 @@
 /**
  * Decides whether an unsynced local edit from an earlier session should be re-applied over what the server
- * holds. The server row's `updated_at` is the client clock at the time of that save, so it is comparable with
- * the local edit's timestamp. If the server copy is newer (the answer was saved after the local edit, e.g. from
+ * holds. The server row's `updated_at` is stamped by the server (migration 004); the local edit's timestamp is the
+ * browser clock, so a badly wrong device clock can still mis-order the two. If the server copy is newer (the answer was saved after the local edit, e.g. from
  * another device) the stale local edit must not overwrite it.
  *
  * An unknown local timestamp (older stored data) keeps the previous behaviour: apply it.

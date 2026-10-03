@@ -37,6 +37,11 @@ function writeStamps(uid: string, stamps: Record<string, number>) {
   else safeStorage.remove(stampKey(uid));
 }
 
+/** True when this browser still holds edits that never reached the server (e.g. access ended mid-edit). */
+export function hasUnsyncedEdits(uid: string): boolean {
+  return Object.keys(readPending(uid)).length > 0;
+}
+
 /** An unsynced patch left by an earlier session, with the time of the local edit (null if unknown). */
 export interface RecoveredPatch { patch: AnswerPatch; at: number | null }
 
@@ -95,7 +100,7 @@ export function useAutosave(candidateId: string) {
       // text/code fields are separate requests so one oversized diagram cannot block the question's text.
       for (const part of splitPatch(patch)) {
         const { error } = await supabase.from('answers').upsert(
-          { candidate_id: candidateId, question_id: questionId, ...part.patch, updated_at: new Date().toISOString() },
+          { candidate_id: candidateId, question_id: questionId, ...part.patch }, // updated_at is stamped by the server (migration 004)
           { onConflict: 'candidate_id,question_id' },
         );
         const key = `${questionId}:${part.group}`;

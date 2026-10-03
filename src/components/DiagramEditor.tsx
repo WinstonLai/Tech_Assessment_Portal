@@ -12,6 +12,10 @@ import '@excalidraw/excalidraw/index.css';
 import type { DiagramScene } from '../lib/types';
 import { registerDiagramFlush, trackDiagramSave } from '../lib/diagramFlush';
 import { useTheme } from '../lib/theme';
+import { reviewElements, safeFiles } from '../lib/diagramScene';
+import { configureExcalidrawAssets } from '../lib/excalidrawAssets';
+
+configureExcalidrawAssets();
 
 interface Props {
   initialScene: DiagramScene | null;
@@ -31,19 +35,6 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     r.onerror = () => reject(r.error);
     r.readAsDataURL(blob);
   });
-}
-
-/**
- * Scenes are candidate-controlled and opened in the admin's browser. Keep only embedded images that are
- * inline raster data URLs, so a `dataURL` pointing at a remote host is never fetched.
- */
-function safeFiles(files: DiagramScene['files']): BinaryFiles {
-  const out: Record<string, unknown> = {};
-  for (const [id, f] of Object.entries(files ?? {})) {
-    const url = (f as { dataURL?: unknown } | null)?.dataURL;
-    if (typeof url === 'string' && /^data:image\/(png|jpeg|gif|webp);base64,/.test(url)) out[id] = f;
-  }
-  return out as BinaryFiles;
 }
 
 export default function DiagramEditor({ initialScene, onChange, readOnly = false, height = 560 }: Props) {
@@ -183,7 +174,8 @@ export default function DiagramEditor({ initialScene, onChange, readOnly = false
           excalidrawAPI={setApi}
           theme={theme}
           initialData={{
-            elements: (initialScene?.elements ?? []) as never,
+            // A read-only view is the reviewer's: strip element links so a candidate-planted hyperlink cannot be clicked.
+            elements: (readOnly ? reviewElements(initialScene) : (initialScene?.elements ?? [])) as never,
             files: safeFiles(initialScene?.files),
             appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 2 as never },
             scrollToContent: true,
