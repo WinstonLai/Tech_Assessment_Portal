@@ -116,8 +116,14 @@ src/
   pages/LoginPage.tsx
   pages/candidate/   WelcomePage, AssessmentPage (editors, autosave, timer, review & submit), SubmittedPage
   pages/admin/       CandidatesPage (accounts, passwords, expiry, summary export), ReviewPage (marking, Word export)
-  components/        RichTextEditor (Tiptap), CodeEditor (CodeMirror), DiagramEditor (Excalidraw), ui
-  lib/               supabase, auth, useActiveTimer, useAutosave, marking, exportDocx, markdown, format
+  components/        RichTextEditor (Tiptap), CodeEditor (CodeMirror), DiagramEditor (Excalidraw), ErrorBoundary, ui
+  lib/               supabase (client, error messages), auth (roles), types, format
+                     useActiveTimer (heartbeat / pause), useAutosave (debounced, offline-safe saves),
+                     saveErrors (permanent vs retryable failures), recovery (stale local edits), diagramFlush,
+                     safeStorage (localStorage that never throws), marking (auto-scoring, totals),
+                     exportDocx (Word reports), csv (spreadsheet-safe cells), markdown (sanitising)
+  lib/*.test.ts      unit tests (vitest; the timer tests run in jsdom)
+csp.ts                               Content-Security-Policy meta tag, added to production builds only
 supabase/
   migrations/001_init.sql            tables, RLS, heartbeat/pause/submit RPCs, storage policies
   migrations/002_answer_limits.sql   size caps and inline-PNG check on answers
