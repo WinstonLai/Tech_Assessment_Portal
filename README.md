@@ -41,6 +41,8 @@ Keep a backup of `private/` somewhere safe, such as OneDrive. Another option is 
    To check that the limits are active, run `select conname from pg_constraint where conrelid = 'public.answers'::regclass;`. The result should include `answers_size_limits` and `answers_diagram_png_format`.
 4. **Storage → `assessment-data` bucket** (created by the migration) → upload `private/wellnesstrack_sample_data.zip`.
 
+Node is pinned in `.node-version` (24) and managed with [fnm](https://github.com/Schniz/fnm), not a global Homebrew install. Install it once with `brew install fnm`, add `eval "$(fnm env --use-on-cd --shell zsh)"` to `~/.zshrc`, then run `fnm install` inside the repo.
+
 Generate the seed SQL and the data zip locally:
 ```bash
 npm install

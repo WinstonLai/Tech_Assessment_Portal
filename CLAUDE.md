@@ -8,6 +8,8 @@ An online tech assessment portal for shortlisting HPB CDOO Data Engineering inte
 
 ## Commands
 
+Node is not installed from Homebrew. The version is pinned in `.node-version` (24, the same file the CI workflow reads; `package.json` `engines` enforces `>=24 <25`) and managed by [fnm](https://github.com/Schniz/fnm) (`brew install fnm`, plus `eval "$(fnm env --use-on-cd --shell zsh)"` in `~/.zshrc`). Run `fnm install` once in the repo, and it switches automatically when you `cd` in.
+
 ```bash
 npm run dev            # Vite dev server (needs .env.local with VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
 npm run build          # tsc -p tsconfig.json && vite build
@@ -19,7 +21,7 @@ npm run data:zip       # HPB_Interview_Materials CSVs -> private/wellnesstrack_s
 ```
 
 There is no linter configured. `tsconfig.json` excludes `*.test.ts` (they use node APIs), and vitest does not type-check, so test files are not type-checked by any script.
-Tests run in node, except `useActiveTimer.test.ts`, which opts into jsdom with a `// @vitest-environment jsdom` docblock. `exportDocx.test.ts` unzips the generated `.docx` with `jszip` and asserts on its XML. Importing `docx` under Node 26 prints a harmless `localStorage` ExperimentalWarning from the library.
+Tests run in node, except `useActiveTimer.test.ts`, which opts into jsdom with a `// @vitest-environment jsdom` docblock. `exportDocx.test.ts` unzips the generated `.docx` with `jszip` and asserts on its XML. Importing `docx` under Node 26 (not the pinned 24) prints a harmless `localStorage` ExperimentalWarning from the library.
 
 Deploy: pushing to `main` runs `.github/workflows/deploy.yml` (npm ci → test → build with the `VITE_SUPABASE_*` repo secrets → GitHub Pages). Live URL: https://winstonlai.github.io/Tech_Assessment_Portal/. Supabase project ref: `giqqreoohsuwrxngxdkq`.
 
