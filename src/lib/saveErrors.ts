@@ -15,6 +15,9 @@ export function friendlySaveError(message: string): string {
   if (/answers_size_limits|answers_diagram_png_format/.test(message)) {
     return 'this answer is too large to save (for example big pasted images). Remove or shrink them.';
   }
+  if (/answers_total_size_limit/.test(message)) {
+    return 'your answers together are too large to save (for example big pasted images). Remove or shrink some.';
+  }
   if (/row-level security|42501/.test(message)) {
     return 'your access to this assessment has ended or it was already submitted.';
   }

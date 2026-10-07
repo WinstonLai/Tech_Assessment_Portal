@@ -37,6 +37,7 @@ Keep a backup of `private/` somewhere safe, such as OneDrive. Another option is 
    4. `supabase/seed/answer_key.sql`
    5. `supabase/migrations/003_start_on_first_answer.sql` (server stamps the start time on the first saved answer; needed for the review page's **Elapsed** figure to be reliable)
    6. `supabase/migrations/004_server_updated_at.sql` (server stamps `answers.updated_at`; **apply this before deploying the frontend that stops sending it**, otherwise edits to an existing answer keep their old timestamp)
+   7. `supabase/migrations/005_answer_total_cap.sql` (caps one candidate's total stored answers at 15 MB, so 20 candidates stay near 300 MB of the 500 MB free database; safe to apply while candidates are working, as it never blocks edits that do not grow an answer)
 
    To check that the limits are active, run `select conname from pg_constraint where conrelid = 'public.answers'::regclass;`. The result should include `answers_size_limits` and `answers_diagram_png_format`.
 4. **Storage → `assessment-data` bucket** (created by the migration) → upload `private/wellnesstrack_sample_data.zip`.
@@ -138,6 +139,7 @@ supabase/
   migrations/002_answer_limits.sql   size caps and inline-PNG check on answers
   migrations/003_start_on_first_answer.sql   trigger: started_at is stamped by the server on the first answer write
   migrations/004_server_updated_at.sql       trigger: answers.updated_at is stamped by the server
+  migrations/005_answer_total_cap.sql        trigger: caps a candidate's total stored answers (15 MB)
   functions/admin-candidates/        create / reset_password / delete candidate accounts
 scripts/generate-seed.mjs            private content -> seed SQL (+ validation)
 scripts/package-sample-data.sh       CSVs -> zip for Storage

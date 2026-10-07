@@ -23,6 +23,11 @@ describe('friendlySaveError', () => {
     expect(friendlySaveError(msg)).toMatch(/too large/);
   });
 
+  it('explains the per-candidate total size limit', () => {
+    const msg = "answers_total_size_limit: this candidate's answers exceed the 15 MB total storage limit";
+    expect(friendlySaveError(msg)).toMatch(/together are too large/);
+  });
+
   it('explains RLS rejections and passes other messages through', () => {
     expect(friendlySaveError('new row violates row-level security policy for table "answers"')).toMatch(/access/);
     expect(friendlySaveError('something else')).toBe('something else');
