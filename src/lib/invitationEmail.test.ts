@@ -46,6 +46,20 @@ describe('buildInvitationEmail', () => {
     expect(body).toContain('Access expires: —');
   });
 
+  it('spaces out and indents the numbered items so they are easy to read', () => {
+    const { body } = buildInvitationEmail(base);
+    expect(body).toContain('we would require you to:\n\n1. Complete a technical assessment online within three days.\n\n   Portal: ');
+    expect(body).toContain('\n   Email: johnlim.kang@gmail.com\n   Password: 5PEw-ZbcL-uG9H\n   Access expires: Oct 08, 2026, 05:32 PM SGT\n\n   You can save and exit');
+    expect(body).toContain('access expires.\n\n2. Please share');
+    expect(body).toContain('submission.\n\nPlease ensure your responses');
+  });
+
+  it('keeps the password-reset login details unindented', () => {
+    const { body } = buildInvitationEmail({ ...base, isNew: false });
+    expect(body).toContain('sign in:\nPortal: ');
+    expect(body).toContain('\nEmail: johnlim.kang@gmail.com\nPassword: ');
+  });
+
   it('sends a short password-reset message instead of the full invitation', () => {
     const { subject, body } = buildInvitationEmail({ ...base, isNew: false });
     expect(subject).toBe("[Assessment] New login details for John Luke Lim Kang's Internship Tech Assessment");

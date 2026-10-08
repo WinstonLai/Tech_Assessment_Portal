@@ -11,6 +11,9 @@ export interface InvitationInput {
   now?: number;
 }
 
+/** Aligns detail lines under the text of a "1. " list item. Spaces, not tabs, so it survives copy and paste. */
+const INDENT = '   ';
+
 /** Subject and body of the invitation email, mirroring the one sent to candidates. */
 export function buildInvitationEmail(i: InvitationInput): { subject: string; body: string } {
   const name = i.fullName?.trim() ?? '';
@@ -18,10 +21,15 @@ export function buildInvitationEmail(i: InvitationInput): { subject: string; bod
   const expires = formatDateTimeSgt(i.expiresAtIso);
   const deadline = formatDeadlineSgt(i.expiresAtIso);
 
-  const login = `Portal: ${i.portalUrl}
-Email: ${i.email}
-Password: ${i.password}
-Access expires: ${expires}`;
+  const loginLines = (indent = '') =>
+    [
+      `Portal: ${i.portalUrl}`,
+      `Email: ${i.email}`,
+      `Password: ${i.password}`,
+      `Access expires: ${expires}`,
+    ]
+      .map((l) => indent + l)
+      .join('\n');
 
   if (i.isNew === false) {
     const subject = name
@@ -30,7 +38,7 @@ Access expires: ${expires}`;
     const body = `Hi ${firstName},
 
 Your password for the technical assessment portal has been reset. Please use the details below to sign in:
-${login}
+${loginLines()}
 
 Your saved answers are kept, so you can pick up where you left off. Please submit by ${deadline} (Singapore Time).
 
@@ -52,9 +60,13 @@ Thank you for your interest in interning with the Chief Data Officer’s Office,
 You are currently shortlisted for an internship with us.
 
 As part of the next step of the selection process, we would require you to:
+
 1. Complete a technical assessment online within ${within}.
-${login}
-You can save and exit at any time and resume later. Your active time is shown on screen; the total time from your first answer to your submission is also recorded. Please submit before your access expires.
+
+${loginLines(INDENT)}
+
+${INDENT}You can save and exit at any time and resume later. Your active time is shown on screen; the total time from your first answer to your submission is also recorded. Please submit before your access expires.
+
 2. Please share any example of your past data engineering or analytics project you have worked on. Kindly ensure that all code and/or reports are submitted in PDF format, as other file formats may be blocked by the email server and could affect our assessment of your submission.
 
 Please ensure your responses to #1 and #2 are submitted by ${deadline} (Singapore Time). Kindly use "Reply All" to ensure all recipients receive your submission.
