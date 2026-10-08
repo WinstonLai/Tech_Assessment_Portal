@@ -346,7 +346,10 @@ function AddCandidateModal({ open, onClose, onCreated }: { open: boolean; onClos
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) { setEmail(''); setName(''); setExpiry(defaultExpiry()); setError(null); }
+    if (!open) return;
+    setEmail(''); setName(''); setExpiry(defaultExpiry()); setError(null);
+    // Wake the Edge Function while the admin types, so "Create" does not pay for a cold start. Best effort only.
+    void supabase.functions.invoke('admin-candidates', { body: { action: 'ping' } }).catch(() => {});
   }, [open]);
 
   const submit = async (e: FormEvent) => {
@@ -445,7 +448,7 @@ function CredentialsModal({ creds, onClose }: { creds: Credentials | null; onClo
             <span className="text-sm font-medium">Invitation email: body</span>
             <Button variant="secondary" className="!py-1 !text-xs" onClick={() => copy(body, 'body')}>{copied === 'body' ? 'Copied ✓' : 'Copy body'}</Button>
           </div>
-          <textarea readOnly className={`${inputClass} h-80 font-mono text-xs`} value={body} aria-label="Invitation email body" />
+          <textarea readOnly className={`${inputClass} h-56 font-mono text-xs`} value={body} aria-label="Invitation email body" />
         </div>
       </div>
     </Modal>

@@ -77,14 +77,15 @@ export function Modal({ open, title, onClose, children, footer, wide, dismissibl
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-surface shadow-xl outline-none`}
+        className={`flex max-h-full w-full flex-col ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-surface shadow-xl outline-none`}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-slate-200 px-5 py-3">
+        <div className="shrink-0 border-b border-slate-200 px-5 py-3">
           <h2 className="text-base font-semibold">{title}</h2>
         </div>
-        <div className="px-5 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3">{footer}</div>}
+        {/* Only the body scrolls, so a tall dialog on a short window keeps its title and footer buttons on screen. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {footer && <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-5 py-3">{footer}</div>}
       </div>
     </div>
   );

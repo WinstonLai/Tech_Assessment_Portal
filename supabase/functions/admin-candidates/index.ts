@@ -3,6 +3,7 @@
 //   create          { email, full_name, access_expires_at }       -> { candidate, password }
 //   reset_password  { candidate_id, access_expires_at? }           -> { candidate, password }
 //   delete          { candidate_id }                               -> { ok }
+//   ping            {}                                             -> { ok }   (admin-only no-op; the UI sends it to warm the function up)
 // Deploy: supabase functions deploy admin-candidates
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -10,6 +11,8 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  // Lets the browser reuse one preflight for later calls instead of paying an extra round trip for each.
+  'Access-Control-Max-Age': '7200',
 };
 
 const json = (body: unknown, status = 200) =>
@@ -41,16 +44,17 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get('Authorization') ?? '';
   const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
-  const { data: userData, error: userErr } = await userClient.auth.getUser();
+  // Verify the token and the admin role at the same time: two sequential round trips made every call slower.
+  // The admins SELECT policy shows a caller only their own row (an admin sees all rows), so any row means admin.
+  const [{ data: userData, error: userErr }, { data: adminRows, error: adminErr }] = await Promise.all([
+    userClient.auth.getUser(),
+    userClient.from('admins').select('user_id').limit(1),
+  ]);
   if (userErr || !userData.user) return json({ error: 'Not signed in' }, 401);
+  if (adminErr) return json({ error: adminErr.message }, 500);
+  if (!adminRows?.length) return json({ error: 'Admin access required' }, 403);
 
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data: adminRow } = await admin
-    .from('admins')
-    .select('user_id')
-    .eq('user_id', userData.user.id)
-    .maybeSingle();
-  if (!adminRow) return json({ error: 'Admin access required' }, 403);
 
   let body: Record<string, unknown>;
   try {
@@ -61,6 +65,9 @@ Deno.serve(async (req) => {
 
   try {
     switch (body.action) {
+      case 'ping':
+        return json({ ok: true });
+
       case 'create': {
         const email = String(body.email ?? '').trim().toLowerCase();
         const fullName = String(body.full_name ?? '').trim() || null;
