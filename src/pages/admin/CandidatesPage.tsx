@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { saveAs } from 'file-saver';
 import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { formatDateTime, formatDuration, isExpired, toLocalInput } from '../../lib/format';
+import { formatDateTime, formatDateTimeSgt, formatDuration, isExpired, toLocalInput } from '../../lib/format';
 import { computeAutoMarks, sectionTotals } from '../../lib/marking';
 import { csvCell } from '../../lib/csv';
+import { buildInvitationEmail } from '../../lib/invitationEmail';
 import { fetchAllRows } from '../../lib/paginate';
 import { buildSummaryReport } from '../../lib/exportDocx';
 import type { AnswerKey, Candidate, Mark, Question } from '../../lib/types';
@@ -388,20 +389,20 @@ function AddCandidateModal({ open, onClose, onCreated }: { open: boolean; onClos
 
 function CredentialsModal({ creds, onClose }: { creds: Credentials | null; onClose: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
-  if (!creds) return null;
+  // Built once per issued password: the text depends on the clock, so re-rendering must not change what gets copied.
+  const email = useMemo(() => {
+    if (!creds) return null;
+    const { candidate: c, password, isNew } = creds;
+    return {
+      ...buildInvitationEmail({
+        fullName: c.full_name, email: c.email, password, expiresAtIso: c.access_expires_at, portalUrl: portalUrl(), isNew,
+      }),
+      expired: isExpired(c.access_expires_at),
+    };
+  }, [creds]);
+  if (!creds || !email) return null;
   const { candidate: c, password } = creds;
-  const invitation = `Dear ${c.full_name || 'candidate'},
-
-Thank you for your interest in the HPB CDOO Data Engineering internship. Please complete the online technical assessment:
-
-Portal: ${portalUrl()}
-Email: ${c.email}
-Password: ${password}
-Access expires: ${formatDateTime(c.access_expires_at)}
-
-You can save and exit at any time and resume later. Your active time is shown on screen; the total time from your first answer to your submission is also recorded. Please submit before your access expires.
-
-Best regards`;
+  const { subject, body, expired } = email;
 
   const copy = async (text: string, what: string) => {
     try {
@@ -421,20 +422,30 @@ Best regards`;
         {!c.is_active && (
           <Alert kind="warning">This candidate is currently <strong>disabled</strong> and cannot sign in. Click “Enable” on the candidates page before sending these details.</Alert>
         )}
+        {expired && (
+          <Alert kind="warning">This candidate’s access has <strong>already expired</strong>, so the dates in the email below are in the past. Set a new expiry on the candidates page, then issue a new password before sending.</Alert>
+        )}
         {copied === 'failed' && <Alert>Could not access the clipboard. Select the text on screen and copy it manually.</Alert>}
         <div className="grid grid-cols-[110px_1fr_auto] items-center gap-2 text-sm">
           <span className="text-slate-500">Email</span><span className="font-mono">{c.email}</span>
           <Button variant="ghost" className="!py-1 !text-xs" onClick={() => copy(c.email, 'email')}>{copied === 'email' ? 'Copied' : 'Copy'}</Button>
           <span className="text-slate-500">Password</span><span className="font-mono text-base font-semibold">{password}</span>
           <Button variant="ghost" className="!py-1 !text-xs" onClick={() => copy(password, 'pw')}>{copied === 'pw' ? 'Copied' : 'Copy'}</Button>
-          <span className="text-slate-500">Expires</span><span>{formatDateTime(c.access_expires_at)}</span><span />
+          <span className="text-slate-500">Expires</span><span>{formatDateTimeSgt(c.access_expires_at)}</span><span />
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-sm font-medium">Invitation email</span>
-            <Button variant="secondary" className="!py-1 !text-xs" onClick={() => copy(invitation, 'inv')}>{copied === 'inv' ? 'Copied ✓' : 'Copy invitation'}</Button>
+            <span className="text-sm font-medium">Invitation email: subject</span>
+            <Button variant="secondary" className="!py-1 !text-xs" onClick={() => copy(subject, 'subject')}>{copied === 'subject' ? 'Copied ✓' : 'Copy subject'}</Button>
           </div>
-          <textarea readOnly className={`${inputClass} h-56 font-mono text-xs`} value={invitation} />
+          <input readOnly className={`${inputClass} font-mono text-xs`} value={subject} aria-label="Invitation email subject" />
+        </div>
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-sm font-medium">Invitation email: body</span>
+            <Button variant="secondary" className="!py-1 !text-xs" onClick={() => copy(body, 'body')}>{copied === 'body' ? 'Copied ✓' : 'Copy body'}</Button>
+          </div>
+          <textarea readOnly className={`${inputClass} h-80 font-mono text-xs`} value={body} aria-label="Invitation email body" />
         </div>
       </div>
     </Modal>
