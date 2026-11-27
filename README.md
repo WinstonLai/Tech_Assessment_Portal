@@ -35,7 +35,7 @@ Keep a backup of `private/` somewhere safe, such as OneDrive. Another option is 
    2. `supabase/migrations/002_answer_limits.sql` (size caps on answers and the inline-PNG check on diagram snapshots; skipping it leaves those protections off)
    3. `supabase/seed/questions.sql` (generate first, see below)
    4. `supabase/seed/answer_key.sql`
-   5. `supabase/migrations/003_start_on_first_answer.sql` (server stamps the start time on the first saved answer; needed for the review page's **Elapsed** figure to be reliable)
+   5. `supabase/migrations/003_start_on_first_answer.sql` (the server also stamps the start time on the first saved answer, so **Elapsed** stays reliable for candidates who skip the timer; needed for that figure to be trustworthy)
    6. `supabase/migrations/004_server_updated_at.sql` (server stamps `answers.updated_at`; **apply this before deploying the frontend that stops sending it**, otherwise edits to an existing answer keep their old timestamp)
    7. `supabase/migrations/005_answer_total_cap.sql` (caps one candidate's total stored answers at 15 MB, so 20 candidates stay near 300 MB of the 500 MB free database; safe to apply while candidates are working, as it never blocks edits that do not grow an answer)
 
@@ -54,7 +54,7 @@ npm run data:zip        # writes private/wellnesstrack_sample_data.zip from HPB_
 #### Hardening checklist (Supabase dashboard, no code)
 - Confirm **Allow new users to sign up** is really off: the anon key is public, so with sign-up on anyone can create an account and obtain a signed-in token.
 - **Authentication → Attack Protection**: enable leaked-password protection and review the rate limits.
-- Enable **TOTP multi-factor authentication** for the admin accounts (they can read every candidate's data and the answer key).
+- Admin accounts can read every candidate's data and the answer key, and they are **password-only**: the app has no MFA enrol/challenge screens and the RLS policies do not require an `aal2` session, so turning on TOTP in the dashboard adds no protection today. Use a long, unique password per admin, and add admins sparingly. (Real MFA needs a challenge UI plus an `aal2` check in `is_admin()`.)
 - After a hiring decision, delete candidates you no longer need (**Delete** on the candidates page) so personal data is not kept longer than necessary.
 
 ### 2. Admin account(s)
@@ -102,7 +102,7 @@ npm test                     # marking unit tests (+ answer-key checks when priv
    - Auto-scores come from the keyword rubric. Each check shows ✓ or ✗.
    - To override a score, type a final score. Leave it blank to keep the auto score. Add comments for colleagues.
    - Click **Export to Word**. You can choose to include the keyword checks and the model answers. The report includes diagrams as images and code in a monospace font.
-5. **Summary CSV / Summary Word** ranks all candidates by total score, with a subtotal per section. Scores are only stored once a candidate has been auto-scored, which happens when you open their review page. Click **Auto-score submitted** first to score everyone in one go. Candidates without scores show as "not marked" and are left out of the ranking.
+5. **Summary CSV / Summary Word** list candidates in the same order, with a subtotal per section and the **Elapsed** time. Only candidates who have **submitted** are ranked, best total first; tied totals share a rank. Candidates who are still in progress (their score reflects partial answers) or have no scores follow without a rank. Scores are only stored once a candidate has been auto-scored, which happens when you open their review page. Click **Auto-score submitted** first to score everyone in one go. Candidates without scores show as "not marked". The CSV opens correctly in Excel, including non-English names.
 6. **Reopen** unlocks a submitted assessment, for example if a candidate submitted by mistake.
 
 ### How the active-time timer works
@@ -110,13 +110,13 @@ npm test                     # marking unit tests (+ answer-key checks when priv
 - The **server** adds the time since the previous heartbeat, but only if the gap is ≤ 90 s. When the candidate hides the tab, goes idle or clicks *Save & exit*, `pause_timer()` banks the time and stops the clock.
 - Closing the laptop or losing the network therefore never counts as active time.
 - Active time is reported by the candidate's browser and only *validated* by the server (a gap over 90 s earns nothing, so it cannot be inflated). It is not tamper-proof against someone calling the API directly, who could save answers and submit without sending heartbeats and so under-report it.
-- For a figure the candidate cannot shorten, the review page also shows **Elapsed**: the time from the server-stamped first saved answer to submission. It includes breaks, so use it as a cross-check on active time, not a replacement.
+- For a figure the candidate cannot shorten, the review page also shows **Elapsed**: the time from the server-stamped start to submission. The start is when the candidate first opens the assessment page (their first heartbeat), or their first saved answer if that comes earlier. It includes breaks, so use it as a cross-check on active time, not a replacement.
 
 ### Marking scheme (100)
-A1 10 · A2 8 · A3 7 · B1–B4 6 each · C1 10 · C2 7 · C3 7 · C4 7 · D1 10 · D2 10.
+13 questions, 100 marks in total. The per-question weights are part of the confidential content, so they live only in `private/assessment_content.mjs`.
 To change weights, rubric items or wording, edit `private/assessment_content.mjs`. Then run `npm run seed:generate` and re-run both seed files in the SQL editor. Re-running is safe: rows are upserted. The questions seed aborts, changing nothing, if candidates already have answers or reviewer marks for a question id that the new content drops or renames, because deleting that question would cascade-delete them. Export those reports first. Then open any review page and click **Recalculate auto-scores**.
 
-The keyword auto-score is a **suggestion**. It checks for the key techniques (e.g. `ROW_NUMBER … PARTITION BY user_id`, `broadcast`, `stack(`). It cannot judge whether a candidate's reasoning is correct, so always review before you share the report.
+The keyword auto-score is a **suggestion**. It checks for the key techniques named in each question's rubric (kept in `private/`, never in this repo). It cannot judge whether a candidate's reasoning is correct, so always review before you share the report.
 
 ---
 
@@ -126,18 +126,27 @@ src/
   pages/LoginPage.tsx
   pages/candidate/   WelcomePage, AssessmentPage (editors, autosave, timer, review & submit), SubmittedPage
   pages/admin/       CandidatesPage (accounts, passwords, expiry, summary export), ReviewPage (marking, Word export)
-  components/        RichTextEditor (Tiptap), CodeEditor (CodeMirror), DiagramEditor (Excalidraw), ErrorBoundary, ui
-  lib/               supabase (client, error messages), auth (roles), types, format
+  components/        RichTextEditor (Tiptap), CodeEditor (CodeMirror), DiagramEditor (Excalidraw), LoginBackdrop,
+                     CandidateHeader, ErrorBoundary, ui
+  pages/admin/AdminHeader.tsx        header with sign-out and theme toggle
+  lib/               supabase (client, error messages), auth (roles), types, format (dates, Singapore-time helpers, elapsed)
                      useActiveTimer (heartbeat / pause), useAutosave (debounced, offline-safe saves),
                      saveErrors (permanent vs retryable failures), recovery (stale local edits), diagramFlush,
-                     safeStorage (localStorage that never throws), marking (auto-scoring, totals),
-                     exportDocx (Word reports), csv (spreadsheet-safe cells), markdown (sanitising)
+                     safeStorage (localStorage that never throws), paginate (reads past PostgREST's 1000-row cap),
+                     marking (auto-scoring, totals), summary (ranking + summary CSV), exportDocx (Word reports),
+                     csv (spreadsheet-safe cells), invitationEmail (copyable invitation text),
+                     markdown (sanitising), answerHtml + tiptapExtensions (reviewer rendering of rich text),
+                     diagramScene + diagramSnapshot (safe scene handling, PNG re-render), excalidrawAssets,
+                     theme (light/dark, saved in localStorage)
   lib/*.test.ts      unit tests (vitest; the timer tests run in jsdom)
-csp.ts                               Content-Security-Policy meta tag, added to production builds only
+public/              frame-guard.js (anti-framing) and theme-init.js (theme before first paint); external files because the CSP forbids inline scripts
+csp.ts               Content-Security-Policy meta tag, added to production builds only
+excalidrawFonts.ts   build plugin that self-hosts Excalidraw's fonts (no font CDN)
+.github/             deploy workflow (test, build, GitHub Pages) and Dependabot config
 supabase/
   migrations/001_init.sql            tables, RLS, heartbeat/pause/submit RPCs, storage policies
   migrations/002_answer_limits.sql   size caps and inline-PNG check on answers
-  migrations/003_start_on_first_answer.sql   trigger: started_at is stamped by the server on the first answer write
+  migrations/003_start_on_first_answer.sql   trigger: started_at is also stamped by the server on the first answer write
   migrations/004_server_updated_at.sql       trigger: answers.updated_at is stamped by the server
   migrations/005_answer_total_cap.sql        trigger: caps a candidate's total stored answers (15 MB)
   functions/admin-candidates/        create / reset_password / delete candidate accounts

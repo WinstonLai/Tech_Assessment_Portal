@@ -5,7 +5,7 @@ import { errorMessage, supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { formatDateTime, formatDateTimeSgt, formatDuration, isExpired, toLocalInput } from '../../lib/format';
 import { computeAutoMarks, sectionTotals } from '../../lib/marking';
-import { csvCell } from '../../lib/csv';
+import { buildSummaryCsv } from '../../lib/summary';
 import { buildInvitationEmail } from '../../lib/invitationEmail';
 import { fetchAllRows } from '../../lib/paginate';
 import { buildSummaryReport } from '../../lib/exportDocx';
@@ -45,6 +45,7 @@ export default function CandidatesPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setError(null); // a successful retry must not leave the previous failure on screen
     // Paged: PostgREST silently truncates at 1000 rows, which is ~76 candidates' marks, and a truncated
     // marks list would show wrong totals and a wrong ranking without any error.
     const [c, m, q] = await Promise.all([
@@ -54,9 +55,11 @@ export default function CandidatesPage() {
     ]);
     const err = c.error ?? m.error ?? q.error;
     if (err) setError(await errorMessage(err));
-    setCandidates((c.data ?? []) as Candidate[]);
-    setMarks((m.data ?? []) as Mark[]);
-    setQuestions((q.data ?? []) as Question[]);
+    // A failed refresh (after an action, or a retry) keeps what is already on screen instead of blanking the table;
+    // only a first load that fails ends up with the empty "Could not load" state.
+    setCandidates((prev) => (c.error ? prev ?? [] : (c.data ?? []) as Candidate[]));
+    setMarks((prev) => (m.error ? prev : (m.data ?? []) as Mark[]));
+    setQuestions((prev) => (q.error ? prev : (q.data ?? []) as Question[]));
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -155,17 +158,8 @@ export default function CandidatesPage() {
       saveAs(await buildSummaryReport(rows, questions, session?.user.email ?? 'admin'), `WellnessTrack_Candidate_Summary_${stamp}.docx`);
       return;
     }
-    const sections = [...new Set(questions.map((q) => q.section))];
-    const lines = [
-      ['name', 'email', 'status', 'active_time', 'active_seconds', 'started_at', 'submitted_at', ...sections.map((s) => `section_${s}`), 'total'].join(','),
-      ...rows.map(({ candidate: c, marks: m }) => {
-        // No marks rows = not scored yet: leave the score cells blank rather than exporting a misleading 0.
-        const t = Object.keys(m).length ? sectionTotals(questions, m) : null;
-        return [c.full_name, c.email, c.status, formatDuration(c.active_seconds), c.active_seconds, c.started_at, c.submitted_at,
-          ...sections.map((s) => (t ? t.sections.get(s)?.score ?? 0 : '')), t ? t.total : ''].map(csvCell).join(',');
-      }),
-    ];
-    saveAs(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }), `WellnessTrack_Candidate_Summary_${stamp}.csv`);
+    // The BOM is part of the text; a Blob keeps it as-is (file-saver's autoBom is not needed).
+    saveAs(new Blob([buildSummaryCsv(rows, questions)], { type: 'text/csv;charset=utf-8' }), `WellnessTrack_Candidate_Summary_${stamp}.csv`);
   };
 
   const visible = (candidates ?? []).filter((c) =>
