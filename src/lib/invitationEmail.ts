@@ -65,7 +65,7 @@ As part of the next step of the selection process, we would require you to:
 
 ${loginLines(INDENT)}
 
-${INDENT}You can save and exit at any time and resume later. Your active time is shown on screen; the total time from your first answer to your submission is also recorded. Please submit before your access expires.
+${INDENT}You can save and exit at any time and resume later. Your active time is shown on screen; the total time from when you first open the assessment to your submission is also recorded. Please submit before your access expires.
 
 2. Please share any example of your past data engineering or analytics project you have worked on. Kindly ensure that all code and/or reports are submitted in PDF format, as other file formats may be blocked by the email server and could affect our assessment of your submission.
 

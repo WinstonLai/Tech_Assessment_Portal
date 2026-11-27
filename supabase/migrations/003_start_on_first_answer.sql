@@ -3,8 +3,9 @@
 -- Why: active_seconds is reported by the browser through heartbeat(); the server only validates the gaps.
 -- A candidate who talks to the REST API directly can write answers and submit without ever sending a
 -- heartbeat. Before this, submit_assessment() then set started_at = submitted_at (elapsed 0), which made the
--- wall-clock span useless as a cross-check. With this trigger started_at is set by the server at the first
--- answer write, so (submitted_at - started_at) is a figure the candidate cannot shorten after the fact.
+-- wall-clock span useless as a cross-check. With this trigger started_at is set by the server at the latest at the
+-- first answer write (a candidate using the UI gets it slightly earlier, from the first heartbeat() when the assessment
+-- page opens), so (submitted_at - started_at) is a figure the candidate cannot shorten after the fact.
 -- active_seconds itself stays advisory (see README).
 --
 -- Only candidate writes count: admin / service-role edits have auth.uid() null or different from

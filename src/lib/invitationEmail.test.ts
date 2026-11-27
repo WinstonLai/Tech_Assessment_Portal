@@ -26,6 +26,10 @@ describe('buildInvitationEmail', () => {
     expect(body.endsWith('Thanks.')).toBe(true);
   });
 
+  it('says the recorded total runs from when the candidate first opens the assessment', () => {
+    expect(buildInvitationEmail(base).body).toContain('from when you first open the assessment to your submission');
+  });
+
   it('derives the time allowed from the expiry', () => {
     expect(buildInvitationEmail(base).body).toContain('online within three days.');
     const fiveDays = buildInvitationEmail({ ...base, expiresAtIso: '2026-10-10T09:32:00Z' });

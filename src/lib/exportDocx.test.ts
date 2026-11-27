@@ -83,6 +83,7 @@ describe('buildCandidateReport', () => {
     expect(text).toMatch(/Candidate\s*Ann Tan/);
     expect(text).toMatch(/Email\s*ann@example\.com/);
     expect(text).toMatch(/Active time\s*01:02:05/);
+    expect(text).toMatch(/Elapsed\s*01:30:00/); // 08:00 -> 09:30, stamped by the server
     // A1 final 7 (not auto 4) + B1 auto 6 + B2 unmarked 0 = 13 of 20
     expect(text).toMatch(/Total score\s*13 \/ 20/);
     expect(text).toMatch(/Section A: Data modelling\s*7\s*10/);
@@ -278,6 +279,19 @@ describe('buildSummaryReport', () => {
     const { text } = await read(await buildSummaryReport(rows, QUESTIONS, 'reviewer@example.com'));
     // Carl: Sec A, Sec B and Total
     expect(text.match(/not marked/g)).toHaveLength(3);
+  });
+
+  it('shows the elapsed time of submitted candidates', async () => {
+    const { text } = await read(await buildSummaryReport(rows, QUESTIONS, 'reviewer@example.com'));
+    expect(text).toContain('Elapsed');
+    expect(text).toContain('01:30:00');
+  });
+
+  it('does not rank an in-progress candidate, whatever their partial score', async () => {
+    const partial = { candidate: candidate({ id: 'p', email: 'pat@example.com', full_name: 'Pat', status: 'in_progress', submitted_at: null }), marks: { A1: mark('A1', { auto_score: 10 }), B1: mark('B1', { auto_score: 6 }), B2: mark('B2', { auto_score: 4 }) } };
+    const { text } = await read(await buildSummaryReport([...rows, partial], QUESTIONS, 'reviewer@example.com'));
+    expect(text).toMatch(/\n—\nPat/);
+    expect(text).toMatch(/\n1\nAlice/);
   });
 
   it('lists a column per section and the generating reviewer', async () => {

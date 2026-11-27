@@ -19,7 +19,8 @@ import { marked, type Token, type Tokens } from 'marked';
 import type { JSONContent } from '@tiptap/react';
 import type { Answer, AnswerKey, Candidate, Mark, Question } from './types';
 import { effectiveScore, richTextToPlain, sectionTotals } from './marking';
-import { formatDateTime, formatDuration } from './format';
+import { elapsedSeconds, formatDateTime, formatDuration } from './format';
+import { rankSummary, type SummaryRow } from './summary';
 import { safePngDataUrl } from './markdown';
 
 const MONO = 'Consolas';
@@ -293,6 +294,8 @@ export async function buildCandidateReport(input: ReportInput): Promise<Blob> {
   numberingInstance = 0;
   const totals = sectionTotals(questions, marks);
   const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
+  // Server-stamped first activity to submission (so far, if not submitted); the candidate cannot shorten it.
+  const elapsed = elapsedSeconds(candidate.started_at, candidate.submitted_at);
 
   const body: (Paragraph | Table)[] = [
     new Paragraph({ text: 'WellnessTrack Tech Assessment — Candidate Report', heading: HeadingLevel.TITLE }),
@@ -305,6 +308,7 @@ export async function buildCandidateReport(input: ReportInput): Promise<Blob> {
       ['Started', formatDateTime(candidate.started_at)],
       ['Submitted', formatDateTime(candidate.submitted_at)],
       ['Active time', formatDuration(candidate.active_seconds)],
+      ['Elapsed', elapsed == null ? '—' : formatDuration(elapsed)],
       ['Total score', `${fmt(totals.total)} / ${totals.max}`],
       ['Reviewed by', input.reviewer],
       ['Report generated', formatDateTime(new Date().toISOString())],
@@ -382,20 +386,15 @@ export async function buildCandidateReport(input: ReportInput): Promise<Blob> {
   return Packer.toBlob(doc);
 }
 
-export interface SummaryRow {
-  candidate: Candidate;
-  marks: Record<string, Mark | undefined>;
-}
+export type { SummaryRow };
 
 export async function buildSummaryReport(rows: SummaryRow[], questions: Question[], reviewer: string): Promise<Blob> {
   const sections = [...new Set(questions.map((q) => q.section))];
   const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
-  // A candidate with no marks rows has not been auto-scored or reviewed yet: show that, not a misleading 0.
-  const data = rows
-    .map((r) => ({ r, marked: Object.keys(r.marks).length > 0, t: sectionTotals(questions, r.marks) }))
-    .sort((a, b) => Number(b.marked) - Number(a.marked) || b.t.total - a.t.total);
+  // Same order as the CSV. A candidate with no marks rows has not been auto-scored or reviewed yet: show that,
+  // not a misleading 0. Only submitted candidates are ranked; ties share a rank.
+  const data = rankSummary(rows, questions);
   const max = sectionTotals(questions, {}).max;
-  let rank = 0;
   const doc = new Document({
     creator: reviewer,
     title: 'WellnessTrack assessment — candidate summary',
@@ -407,10 +406,10 @@ export async function buildSummaryReport(rows: SummaryRow[], questions: Question
         muted(`Generated ${formatDateTime(new Date().toISOString())} by ${reviewer}`),
         new Paragraph(''),
         simpleTable([
-          ['#', 'Candidate', 'Email', 'Status', 'Active time', 'Submitted', ...sections.map((s) => `Sec ${s}`), `Total /${max}`],
-          ...data.map(({ r, marked, t }) => [
-            marked ? String(++rank) : '—', r.candidate.full_name ?? '', r.candidate.email, r.candidate.status.replace('_', ' '),
-            formatDuration(r.candidate.active_seconds), formatDateTime(r.candidate.submitted_at),
+          ['#', 'Candidate', 'Email', 'Status', 'Active time', 'Elapsed', 'Submitted', ...sections.map((s) => `Sec ${s}`), `Total /${max}`],
+          ...data.map(({ candidate: c, marked, totals: t, rank, elapsed }) => [
+            rank != null ? String(rank) : '—', c.full_name ?? '', c.email, c.status.replace('_', ' '),
+            formatDuration(c.active_seconds), elapsed == null ? '—' : formatDuration(elapsed), formatDateTime(c.submitted_at),
             ...sections.map((s) => (marked ? fmt(t.sections.get(s)?.score ?? 0) : 'not marked')),
             marked ? fmt(t.total) : 'not marked',
           ]),

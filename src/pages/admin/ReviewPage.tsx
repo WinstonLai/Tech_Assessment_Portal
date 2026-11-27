@@ -146,7 +146,7 @@ export default function ReviewPage() {
                 <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-5">
                   <div><dt className="text-slate-500">Active time</dt><dd className="font-mono font-semibold">{formatDuration(candidate.active_seconds)}</dd></div>
                   <div>
-                    <dt className="text-slate-500" title="First answer saved to submission. Set by the server, so it cannot be shortened by the candidate; includes breaks.">Elapsed</dt>
+                    <dt className="text-slate-500" title="From the candidate first opening the assessment (or their first saved answer, if earlier) to submission. Set by the server, so the candidate cannot shorten it; includes breaks.">Elapsed</dt>
                     <dd className="font-mono font-semibold">{(() => { const e = elapsedSeconds(candidate.started_at, candidate.submitted_at); return e == null ? '—' : formatDuration(e); })()}</dd>
                   </div>
                   <div><dt className="text-slate-500">Started</dt><dd>{formatDateTime(candidate.started_at)}</dd></div>
